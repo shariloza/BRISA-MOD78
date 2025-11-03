@@ -1,5 +1,21 @@
-from sqlalchemy import Column, Integer, String
-from app.config.database import Base
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+
+Base = declarative_base()
+
+# ------------------------------
+# MODELOS
+# ------------------------------
+class Cargo(Base):
+    __tablename__ = "cargos"
+
+    id_cargo = Column(Integer, primary_key=True, autoincrement=True)
+    nombre_cargo = Column(String(100), nullable=False)
+    descripcion = Column(String(200), nullable=True)
+    estado = Column(String(20), nullable=False, default="activo")
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
 class Profesor(Base):
     __tablename__ = "personas"
@@ -10,6 +26,10 @@ class Profesor(Base):
     apellido_paterno = Column(String(50), nullable=False)
     apellido_materno = Column(String(50), nullable=True)
     direccion = Column(String(200), nullable=True)
-    tipo_persona = Column(String(50), nullable=False, default="profesor")
-    correo = Column(String(100), nullable=False, unique=True)
     telefono = Column(String(20), nullable=True)
+    correo = Column(String(100), nullable=False, unique=True)
+    tipo_persona = Column(String(50), nullable=False, default="profesor")
+
+    # Relación con cargo
+    id_cargo = Column(Integer, ForeignKey("cargos.id_cargo"), nullable=True)
+    cargo = relationship("Cargo", backref="profesores")
