@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from app.modules.profesores.dto.profesor_dto import ProfesorCreateDTO, ProfesorReadDTO, MateriaReadDTO, CursoReadDTO
-from app.modules.profesores.repositories.profesor_repository import ProfesorRepository, MateriaRepository, CursoRepository
+from app.modules.profesores.dto.profesor_dto import ProfesorCreateDTO, ProfesorReadDTO, MateriaReadDTO, CursoReadDTO, AsignacionCreateDTO, AsignacionReadDTO, AsignacionReadNombreDTO
+from app.modules.profesores.repositories.profesor_repository import ProfesorRepository, MateriaRepository, CursoRepository, AsignacionRepository
 
 class ProfesorService:
 
@@ -59,3 +59,24 @@ class CursoService:
     def listar_cursos(db: Session):
         cursos = CursoRepository.get_all(db)
         return [CursoReadDTO.from_orm(c) for c in cursos]
+    
+class AsignacionService:
+
+    @staticmethod
+    def asignar_materia(db: Session, data: AsignacionCreateDTO):
+        return AsignacionRepository.create(db, data.dict())
+
+    @staticmethod
+    def listar_asignaciones(db: Session):
+        asignaciones = AsignacionRepository.get_all(db)
+        return [AsignacionReadDTO.from_orm(a) for a in asignaciones]
+
+    @staticmethod
+    def listar_por_profesor(db: Session, id_profesor: int):
+        asignaciones = AsignacionRepository.get_by_profesor(db, id_profesor)
+        return [AsignacionReadDTO.from_orm(a) for a in asignaciones]
+    @staticmethod
+    def listar_por_profesor(db: Session, id_profesor: int):
+        asignaciones = AsignacionRepository.get_by_profesor_con_nombres(db, id_profesor)
+        return [AsignacionReadNombreDTO.from_orm(a) for a in asignaciones]
+    

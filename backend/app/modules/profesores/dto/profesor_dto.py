@@ -55,3 +55,24 @@ class CursoReadDTO(BaseModel):
 
     class Config:
         from_attributes = True
+        
+class AsignacionCreateDTO(BaseModel):
+    id_profesor: int
+    id_curso: int
+    id_materia: int
+
+class AsignacionReadDTO(BaseModel):
+    id_profesor: int
+    id_curso: int
+    id_materia: int
+
+    class Config:
+        from_attributes = True
+        
+class AsignacionReadNombreDTO(BaseModel):
+    nombre_profesor: str
+    nombre_curso: str
+    nombre_materia: str
+
+    class Config:
+        from_attributes = True

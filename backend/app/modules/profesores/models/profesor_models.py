@@ -45,3 +45,13 @@ class Curso(Base):
     nombre_curso = Column(String(100), nullable=False)
     nivel = Column(String(50), nullable=False)
     gestion = Column(String(10), nullable=False)
+    
+class ProfesorCursoMateria(Base):
+    __tablename__ = "profesores_cursos_materias"
+
+    id_profesor = Column(Integer, ForeignKey("personas.id_persona"), primary_key=True)
+    id_curso = Column(Integer, ForeignKey("cursos.id_curso"), primary_key=True)
+    id_materia = Column(Integer, ForeignKey("materias.id_materia"), primary_key=True)
+
+
+  

@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from app.config.database import get_db
-from app.modules.profesores.dto.profesor_dto import ProfesorCreateDTO, ProfesorReadDTO, MateriaReadDTO, CursoReadDTO
-from app.modules.profesores.services.profesor_service import ProfesorService, MateriaService, CursoService
+from app.modules.profesores.dto.profesor_dto import ProfesorCreateDTO, ProfesorReadDTO, MateriaReadDTO, CursoReadDTO, AsignacionCreateDTO, AsignacionReadDTO, AsignacionReadNombreDTO
+from app.modules.profesores.services.profesor_service import ProfesorService, MateriaService, CursoService, AsignacionService
 
 router = APIRouter(prefix="/api/profesores", tags=["Profesores"])
 
@@ -24,6 +24,23 @@ def listar_materias(db: Session = Depends(get_db)):
 @router.get("/cursos", response_model=List[CursoReadDTO])
 def listar_cursos(db: Session = Depends(get_db)):
     return CursoService.listar_cursos(db)
+
+@router.post("/asignaciones", response_model=AsignacionReadDTO)
+def asignar_materia(data: AsignacionCreateDTO, db: Session = Depends(get_db)):
+    return AsignacionService.asignar_materia(db, data)
+
+@router.get("/asignaciones", response_model=List[AsignacionReadDTO])
+def listar_asignaciones(db: Session = Depends(get_db)):
+    return AsignacionService.listar_asignaciones(db)
+
+#Por IDS
+# @router.get("/asignaciones/{id_profesor}", response_model=List[AsignacionReadDTO])
+# def listar_asignaciones_profesor(id_profesor: int, db: Session = Depends(get_db)):
+#     return AsignacionService.listar_por_profesor(db, id_profesor)
+
+@router.get("/asignaciones/{id_profesor}", response_model=List[AsignacionReadNombreDTO])
+def listar_asignaciones_profesor(id_profesor: int, db: Session = Depends(get_db)):
+    return AsignacionService.listar_por_profesor(db, id_profesor)
 
 @router.get("/{id_persona}", response_model=ProfesorReadDTO)
 def obtener_profesor(id_persona: int, db: Session = Depends(get_db)):

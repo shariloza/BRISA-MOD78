@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from app.modules.profesores.models.profesor_models import Profesor,Materia, Curso
+from app.modules.profesores.models.profesor_models import Profesor,Materia, Curso, ProfesorCursoMateria
 
 class ProfesorRepository:
 
@@ -46,3 +46,36 @@ class CursoRepository:
     @staticmethod
     def get_all(db: Session):
         return db.query(Curso).all()
+    
+class AsignacionRepository:
+
+    @staticmethod
+    def create(db: Session, data: dict):
+        asignacion = ProfesorCursoMateria(**data)
+        db.add(asignacion)
+        db.commit()
+        db.refresh(asignacion)
+        return asignacion
+
+    @staticmethod
+    def get_all(db: Session):
+        return db.query(ProfesorCursoMateria).all()
+
+    @staticmethod
+    def get_by_profesor(db: Session, id_profesor: int):
+        return db.query(ProfesorCursoMateria).filter_by(id_profesor=id_profesor).all()
+    @staticmethod
+    def get_by_profesor_con_nombres(db: Session, id_profesor: int):
+        return (
+            db.query(
+                Profesor.nombres.label("nombre_profesor"),
+                Curso.nombre_curso.label("nombre_curso"),
+                Materia.nombre_materia.label("nombre_materia")
+            )
+            .join(ProfesorCursoMateria, Profesor.id_persona == ProfesorCursoMateria.id_profesor)
+            .join(Curso, Curso.id_curso == ProfesorCursoMateria.id_curso)
+            .join(Materia, Materia.id_materia == ProfesorCursoMateria.id_materia)
+            .filter(Profesor.id_persona == id_profesor)
+            .all()
+        )
+    
