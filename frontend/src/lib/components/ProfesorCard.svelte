@@ -1,111 +1,132 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { Clock } from "lucide-svelte";
-  export let profesor: {
-    nombre: string;
-    materia: string;
-    estado: string;
-    experiencia: string;
-    cargaHoraria: string;
-    correo?: string;
-    telefono?: string;
-    cursos?: string[];
-  };
-  export let onClick: () => void = () => {};
 
-  $: iniciales = profesor.nombre
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase();
+  const API_URL = 'http://localhost:8000/api/profesores';
+
+  let profesores = [];
+
+  onMount(async () => {
+    try {
+      const response = await fetch(API_URL);
+      if (!response.ok) throw new Error('Error cargando profesores');
+      profesores = await response.json();
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  });
 </script>
 
-<div class="card" on:click={onClick} role="button" tabindex="0">
-  <div class="avatar">{iniciales}</div>
-
-  <div class="content">
-    <div class="top">
-      <div class="nombre">{profesor.nombre}</div>
-      <span class="materia-pill">{profesor.materia}</span>
-    </div>
-
-    <div class="curso-row">
-      {#if profesor.cursos && profesor.cursos.length}
-        {#each profesor.cursos.slice(0, 2) as c}
-          <span class="curso-pill">{c}</span>
-        {/each}
-        {#if profesor.cursos.length > 2}
-          <span class="curso-pill">+{profesor.cursos.length - 2}</span>
-        {/if}
-      {/if}
-    </div>
-
-    <hr class="divider" />
-
-    <div class="footer">
-      <div class="left">
-        <Clock size="16" color="#64748b" />
-        <span class="carga">{profesor.cargaHoraria}</span>
+<div class="profesores-grid">
+  {#each profesores as profesor}
+    <div class="card" role="button" tabindex="0">
+      <div class="avatar">
+        {profesor.nombres
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase()}
       </div>
-      <div class="right">
-        <span class="estado-pill {profesor.estado === 'Activo' ? 'activo' : 'inactivo'}">
-          {profesor.estado}
-        </span>
+
+      <div class="content">
+        <div class="top">
+          <div class="nombre">{profesor.nombres}</div>
+          <span class="materia-pill">
+            {#if profesor.materias.length}
+              {profesor.materias.join(", ")}
+            {/if}
+          </span>
+        </div>
+
+        <div class="curso-row">
+          {#if profesor.cursos?.length}
+            {#each profesor.cursos.slice(0, 2) as curso}
+              <span class="curso-pill">{curso}</span>
+            {/each}
+            {#if profesor.cursos.length > 2}
+              <span class="curso-pill">+{profesor.cursos.length - 2}</span>
+            {/if}
+          {/if}
+        </div>
+
+        <hr class="divider" />
+
+        <div class="footer">
+          <div class="left">
+            <Clock size="16" color="#64748b" />
+            <span class="carga">{profesor.cargaHoraria || 0}</span>
+          </div>
+          <div class="right">
+            <span class="estado-pill {profesor.estado_laboral.toLowerCase() === 'activo' ? 'activo' : 'inactivo'}">
+              {profesor.estado_laboral}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
+  {/each}
 </div>
 
 <style>
+  /* TODO: Mantener todo tu CSS existente */
+  .profesores-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    padding: 20px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
   .card {
-    display: flex;
-    gap: 18px;
-    align-items: flex-start;
     background: #fff;
     border-radius: 12px;
-    padding: 20px 22px;
+    padding: 16px;
     border: 1px solid #e6eef6;
-    width: 100%;          /* <- ocupar todo el ancho de la celda del grid */
-    max-width: none;      /* <- quitar límite que encogía horizontalmente */
-    box-sizing: border-box;
-    cursor: pointer;
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    transition: all 0.2s ease;
   }
   .card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 20px rgba(30, 40, 80, 0.06);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
 
   .avatar {
-    width: 56px;
-    height: 56px;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
     border-radius: 50%;
     background: #9aa9ff;
     color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 700;
-    font-size: 1.05rem;
-    flex: 0 0 56px;
+    font-weight: 600;
+    font-size: 0.9rem;
   }
 
   .content {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .top {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .nombre {
-    font-size: 1rem;
-    font-weight: 600; /* más visible como en el diseño */
-    color: #263243;
+    font-weight: 600;
+    color: #1e293b;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .materia-pill {
@@ -177,16 +198,34 @@
     border-color: rgba(255, 152, 0, 0.12);
   }
 
-  @media (max-width: 600px) {
+  @media (max-width: 1200px) {
+    .profesores-grid {
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      max-width: calc(100vw - 100px);
+    }
+  }
+
+  @media (max-width: 768px) {
+    .profesores-grid {
+      grid-template-columns: 1fr;
+      max-width: 100%;
+      padding: 16px;
+    }
+
     .card {
-      padding: 14px;
+      padding: 12px;
     }
-    .avatar {
-      width: 48px;
-      height: 48px;
+  }
+
+  @media (max-width: 480px) {
+    .top {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
     }
-    .nombre {
-      font-size: 0.95rem;
+
+    .curso-row {
+      flex-wrap: wrap;
     }
   }
 </style>

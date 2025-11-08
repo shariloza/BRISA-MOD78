@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
+from typing import List, Optional
 
 class ProfesorCreateDTO(BaseModel):
     ci: str
@@ -33,6 +34,29 @@ class ProfesorReadDTO(BaseModel):
     estado_laboral: Optional[str] = "activo"
     fecha_retiro: Optional[datetime] = None
     motivo_retiro: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+class ProfesorFullDTO(BaseModel):
+    id_persona: int
+    ci: str
+    nombres: str
+    apellido_paterno: str
+    apellido_materno: Optional[str] = None
+    direccion: Optional[str] = None
+    telefono: Optional[str] = None
+    correo: str
+    tipo_persona: str
+    id_cargo: Optional[int] = None
+    nombre_cargo: Optional[str] = None
+    estado_laboral: Optional[str] = "activo"
+    fecha_retiro: Optional[datetime] = None
+    motivo_retiro: Optional[str] = None
+
+    # Campos adicionales para frontend
+    materias: List[str] = []
+    cursos: List[str] = []
 
     class Config:
         from_attributes = True

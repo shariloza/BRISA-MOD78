@@ -1,5 +1,4 @@
 <script lang="ts">
-  import ProfesorCard from "./components/ProfesorCard.svelte";
   import ProfesorDetalle from "./components/ProfesorDetalle.svelte";
   import NuevoProfesor from "./components/NuevoProfesor.svelte";
   import {
@@ -10,8 +9,13 @@
     Bell,
     Search,
     LogOut,
+    Clock,
   } from "lucide-svelte";
   import { writable } from "svelte/store";
+  import { onMount } from 'svelte';
+
+  const API_URL = 'http://localhost:8000/api/profesores';
+  const API_MATERIAS_URL = 'http://localhost:8000/api/profesores/materias';
 
   // Sidebar
   let abierto = writable(true);
@@ -32,73 +36,67 @@
   ];
 
   // Profesores
-  type Profesor = {
-    nombre: string;
-    materia: string;
-    estado: string;
-    experiencia: string;
-    cargaHoraria: string;
-    correo: string;
-    telefono: string;
-    cursos: string[];
+  type Materia = {
+    id_materia: number;
+    nombre_materia: string;
+    nivel: string;
   };
 
-  let profesores: Profesor[] = [
-    {
-      nombre: "Ana María López",
-      materia: "Matemáticas",
-      estado: "Activo",
-      experiencia: "10 años",
-      cargaHoraria: "18 hrs/semana",
-      correo: "ana@correo.com",
-      telefono: "12345678",
-      cursos: ["5to A", "6to B"],
-    },
-    {
-      nombre: "Carlos Mendoza",
-      materia: "Ciencias Naturales",
-      estado: "Activo",
-      experiencia: "8 años",
-      cargaHoraria: "20 hrs/semana",
-      correo: "carlos@correo.com",
-      telefono: "87654321",
-      cursos: ["5to B", "6to A"],
-    },
-    {
-      nombre: "Lucía Fernández",
-      materia: "Historia",
-      estado: "Inactivo",
-      experiencia: "5 años",
-      cargaHoraria: "15 hrs/semana",
-      correo: "lucia@correo.com",
-      telefono: "11223344",
-      cursos: ["4to A", "4to B"],
-    },
-    {
-      nombre: "Miguel Torres",
-      materia: "Lengua y Literatura",
-      estado: "Activo",
-      experiencia: "12 años",
-      cargaHoraria: "22 hrs/semana",
-      correo: "miguel@correo.com",
-      telefono: "44332211",
-      cursos: ["3ro A", "3ro B"],
-    },
-    {
-      nombre: "Sofía Ramírez",
-      materia: "Inglés",
-      estado: "Activo",
-      experiencia: "7 años",
-      cargaHoraria: "16 hrs/semana",
-      correo: "sofia@gmail.com",
-      telefono: "55667788",
-      cursos: ["2do A", "2do B"],
-    },
-  ];
+  type Profesor = {
+    id?: number;
+    nombres: string;
+    apellido_paterno?: string;
+    apellido_materno?: string;
+    ci?: string;
+    fecha_nacimiento?: string;
+    sexo?: string;
+    direccion?: string;
+    telefono?: string;
+    email?: string;
+    especialidad?: string;
+    titulo_academico?: string;
+    años_experiencia?: number;
+    fecha_contratacion?: string;
+    estado_laboral: string;
+    cargaHoraria?: string;
+    materias?: string[];
+    cursos?: string[];
+  };
+
+  let profesores: Profesor[] = [];
+  let materias: Materia[] = [];
+  let materiaSeleccionada: string = "todas";
 
   let profesorSeleccionado: Profesor | null = null;
   let searchQuery = "";
   let mostrarNuevoProfesor = false;
+
+  onMount(async () => {
+    try {
+      // Cargar profesores
+      const responseProfesores = await fetch(API_URL);
+      if (!responseProfesores.ok) throw new Error('Error cargando profesores');
+      const dataProfesores = await responseProfesores.json();
+      console.log('Profesores cargados:', dataProfesores);
+      profesores = dataProfesores;
+
+      // Cargar materias
+      console.log('Intentando cargar materias desde:', API_MATERIAS_URL);
+      const responseMaterias = await fetch(API_MATERIAS_URL);
+      console.log('Response materias status:', responseMaterias.status);
+      if (!responseMaterias.ok) {
+        console.error('Error en response materias:', responseMaterias.statusText);
+        throw new Error('Error cargando materias');
+      }
+      const dataMaterias = await responseMaterias.json();
+      console.log('Materias cargadas (cantidad):', dataMaterias.length);
+      console.log('Materias cargadas (datos):', dataMaterias);
+      materias = dataMaterias;
+      console.log('Estado materias después de asignar:', materias);
+    } catch (error) {
+      console.error('Error completo:', error);
+    }
+  });
 
   function seleccionarProfesor(p: Profesor) {
     profesorSeleccionado = p;
@@ -125,11 +123,16 @@
 
   $: profesoresFiltrados = profesores.filter((p) => {
     const query = searchQuery.toLowerCase();
-    return (
-      p.nombre.toLowerCase().includes(query) ||
-      p.materia.toLowerCase().includes(query) ||
-      p.cursos.some((c) => c.toLowerCase().includes(query))
-    );
+    const cumpleBusqueda = 
+      p.nombres.toLowerCase().includes(query) ||
+      (p.materias && p.materias.some((m) => m.toLowerCase().includes(query))) ||
+      (p.cursos && p.cursos.some((c) => c.toLowerCase().includes(query)));
+    
+    const cumpleMateria = 
+      materiaSeleccionada === "todas" ||
+      (p.materias && p.materias.includes(materiaSeleccionada));
+    
+    return cumpleBusqueda && cumpleMateria;
   });
 </script>
 
@@ -216,7 +219,15 @@
                 bind:value={searchQuery}
               />
               <div class="right-controls">
-                <button class="filter-btn">Todas las materias ▾</button>
+                <select class="filter-select" bind:value={materiaSeleccionada}>
+                  <option value="todas">Todas las materias</option>
+                  {#each materias as materia}
+                    <option value={materia.nombre_materia}>{materia.nombre_materia}</option>
+                  {/each}
+                </select>
+                <span style="color: #64748b; font-size: 0.85rem; margin-left: 8px;">
+                  ({materias.length} materias)
+                </span>
               </div>
             </div>
           </section>
@@ -225,11 +236,52 @@
             <h3>Lista de Profesores</h3>
 
             <div class="grid-profesores">
-              {#each profesoresFiltrados as p}
-                <ProfesorCard
-                  profesor={p}
-                  onClick={() => seleccionarProfesor(p)}
-                />
+              {#each profesoresFiltrados as profesor}
+                <div class="card" on:click={() => seleccionarProfesor(profesor)} role="button" tabindex="0">
+                  <div class="avatar">
+                    {profesor.nombres
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()}
+                  </div>
+
+                  <div class="content">
+                    <div class="top">
+                      <div class="nombre">{profesor.nombres}</div>
+                      <span class="materia-pill">
+                        {#if profesor.materias && profesor.materias.length}
+                          {profesor.materias.join(", ")}
+                        {/if}
+                      </span>
+                    </div>
+
+                    <div class="curso-row">
+                      {#if profesor.cursos?.length}
+                        {#each profesor.cursos.slice(0, 2) as curso}
+                          <span class="curso-pill">{curso}</span>
+                        {/each}
+                        {#if profesor.cursos.length > 2}
+                          <span class="curso-pill">+{profesor.cursos.length - 2}</span>
+                        {/if}
+                      {/if}
+                    </div>
+
+                    <hr class="divider" />
+
+                    <div class="footer">
+                      <div class="left">
+                        <Clock size="16" color="#64748b" />
+                        <span class="carga">{profesor.cargaHoraria || 0}</span>
+                      </div>
+                      <div class="right">
+                        <span class="estado-pill {profesor.estado_laboral?.toLowerCase() === 'activo' ? 'activo' : 'inactivo'}">
+                          {profesor.estado_laboral || 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               {/each}
               {#if profesoresFiltrados.length === 0}
                 <p>No se encontraron profesores.</p>
@@ -342,7 +394,7 @@
     cursor: pointer;
     transition: all 0.2s ease-in-out;
     transform-origin: left;
-    user-select: none; /* Previene selección de texto */
+    user-select: none;
   }
   .menu-item:hover {
     transform: translateX(4px);
@@ -444,11 +496,11 @@
   }
   .user-info .name {
     font-weight: 600;
-    color: #1e293b; /* Color oscuro para el nombre */
+    color: #1e293b;
   }
   .user-info .role {
     font-size: 0.8rem;
-    color: #6b7f86; /* Color más visible para el rol */
+    color: #6b7f86;
   }
 
   /* page header and controls */
@@ -461,7 +513,7 @@
   .page-header h1 {
     margin: 0;
     font-size: 1.6rem;
-    color: #1e293b; /* Color oscuro para el título */
+    color: #1e293b;
   }
   .page-header p {
     margin: 6px 0 18px 0;
@@ -479,12 +531,12 @@
     border-radius: 12px;
     border: 1px solid #e7eef2;
     background: #fff;
-    color: #1e293b; /* Color de texto más oscuro */
+    color: #1e293b;
     font-size: 0.95rem;
   }
 
   .filter-search::placeholder {
-    color: #94a3b8; /* Color del placeholder más visible */
+    color: #94a3b8;
   }
 
   .filter-btn {
@@ -492,13 +544,43 @@
     border-radius: 10px;
     background: #fff;
     border: 1px solid #e7eef2;
-    color: #475569; /* Color de texto más visible */
+    color: #475569;
     cursor: pointer;
   }
 
-  /* Asegurar que los inputs tengan el texto visible */
+  .filter-select {
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #ffffff;
+    border: 1px solid #e7eef2;
+    color: #000000;
+    cursor: pointer;
+    font-family: "Poppins", sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    min-width: 200px;
+  }
+
+  .filter-select:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-color: var(--accent);
+  }
+
+  .filter-select option {
+    color: #000000;
+    background-color: #ffffff;
+    padding: 10px;
+    font-weight: 500;
+  }
+
   input, select {
-    color: #1e293b;
+    color: #1e293b !important;
+  }
+
+  select option {
+    color: #000000 !important;
+    background: #ffffff !important;
   }
 
   input::placeholder {
@@ -519,13 +601,129 @@
     gap: 20px;
     margin-top: 14px;
   }
-  .grid-profesores > * {
-    transition: all 0.3s ease-in-out;
+
+  /* Cards */
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid #e6eef6;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
 
-  .grid-profesores > *:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 24px rgba(25, 40, 60, 0.05);
+  .avatar {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    border-radius: 50%;
+    background: #9aa9ff;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .content {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .nombre {
+    font-weight: 600;
+    color: #1e293b;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .materia-pill {
+    background: linear-gradient(180deg, #00cfe6, #00bcd4);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+  }
+
+  .curso-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 6px;
+  }
+
+  .curso-pill {
+    font-size: 0.75rem;
+    color: #3b82f6;
+    border: 1px solid #d0e6ff;
+    background: #fff;
+    padding: 6px 10px;
+    border-radius: 999px;
+  }
+
+  .divider {
+    border: none;
+    height: 1px;
+    background: #eef4fa;
+    margin: 6px 0;
+  }
+
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.85rem;
+    color: #64748b;
+  }
+
+  .left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #64748b;
+  }
+
+  .carga { 
+    margin-left: 6px; 
+  }
+
+  .estado-pill {
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    border: 1px solid transparent;
+  }
+  .estado-pill.activo {
+    background: #e6fff7;
+    color: #00a65a;
+    border-color: rgba(0, 166, 90, 0.12);
+  }
+  .estado-pill.inactivo {
+    background: #fff6e6;
+    color: #ff9800;
+    border-color: rgba(255, 152, 0, 0.12);
   }
 
   @media (max-width: 1200px) {
@@ -573,6 +771,18 @@
     }
   }
 
+  @media (max-width: 480px) {
+    .top {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+    }
+
+    .curso-row {
+      flex-wrap: wrap;
+    }
+  }
+
   /* volver button */
   .volver-btn {
     margin-top: 18px;
@@ -581,6 +791,7 @@
     border: none;
     background: #00bcd4;
     color: #fff;
+    cursor: pointer;
   }
 
   /* small adjustments */

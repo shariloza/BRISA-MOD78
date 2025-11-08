@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from app.config.database import get_db
-from app.modules.profesores.dto.profesor_dto import ProfesorCreateDTO, ProfesorReadDTO, MateriaReadDTO, CursoReadDTO, AsignacionCreateDTO, AsignacionReadDTO, AsignacionReadNombreDTO
+from app.modules.profesores.dto.profesor_dto import ProfesorCreateDTO, ProfesorReadDTO, MateriaReadDTO, CursoReadDTO, AsignacionCreateDTO, AsignacionReadDTO, AsignacionReadNombreDTO, ProfesorFullDTO
 from app.modules.profesores.services.profesor_service import ProfesorService, MateriaService, CursoService, AsignacionService
 
 router = APIRouter(prefix="/api/profesores", tags=["Profesores"])
@@ -11,9 +11,17 @@ router = APIRouter(prefix="/api/profesores", tags=["Profesores"])
 def crear_profesor(profesor: ProfesorCreateDTO, db: Session = Depends(get_db)):
     return ProfesorService.crear_profesor(db, profesor)
 
-@router.get("/", response_model=List[ProfesorReadDTO])
+# @router.get("/", response_model=List[dict])
+# def listar_profesores(db: Session = Depends(get_db)):
+#     """Lista profesores con sus materias y cursos asignados"""
+#     return ProfesorService.listar_profesores(db)
+
+@router.get("/", response_model=List[ProfesorFullDTO])
 def listar_profesores(db: Session = Depends(get_db)):
-    return ProfesorService.listar_profesores(db)
+    """
+    Lista profesores con sus materias, cursos y estado laboral
+    """
+    return ProfesorService.listar_profesores_completo(db)
 
 # Endpoints para materias
 @router.get("/materias", response_model=List[MateriaReadDTO])
