@@ -23,6 +23,7 @@
   function toggleSidebar() {
     abierto.update((v) => !v);
   }
+  //asdasd
   const menuItems = [
     { icon: Home, label: "Dashboard" },
     { icon: Users, label: "Usuarios y Roles" },
@@ -30,7 +31,7 @@
     { icon: BookOpen, label: "Profesores" },
     { icon: Layers, label: "Cursos" },
     { icon: Layers, label: "Administrativos" },
-    
+
     { icon: Layers, label: "Retiros Tempranos" },
     { icon: Layers, label: "Incidentes" },
     { icon: Layers, label: "Esquelas" },
