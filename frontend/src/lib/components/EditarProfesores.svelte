@@ -27,6 +27,7 @@
   const dispatch = createEventDispatcher<{
     save: any;
     cancel: void;
+    delete: { id: number };
   }>();
 
   let formData = {
@@ -52,6 +53,7 @@
   let asignacionesGuardadas: any[] = [];
   let asignacionesParaEliminar: any[] = [];
   let cargando = false;
+  let eliminando = false;
   let errorMessage = "";
   let cargandoDatos = false;
   let materias: any[] = [];
@@ -291,6 +293,31 @@
       errorMessage = "✗ Error: " + error.message;
     } finally {
       cargando = false;
+    }
+  }
+
+  async function eliminarProfesor() {
+    if (!formData?.id) return;
+    const confirmar = confirm("¿Confirma que desea eliminar este profesor de la base de datos? Esta acción no se puede deshacer.");
+    if (!confirmar) return;
+    eliminando = true;
+    errorMessage = "";
+    try {
+      const res = await fetch(`${API_URL}/${formData.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.detail || `Error al eliminar (status ${res.status})`);
+      }
+      errorMessage = "✓ Profesor eliminado correctamente";
+      // Notificar a quien usa el componente
+      dispatch("delete", { id: formData.id });
+      // Opcional: cerrar el formulario después de un momento
+      setTimeout(() => dispatch("cancel"), 700);
+    } catch (err: any) {
+      errorMessage = "✗ Error al eliminar: " + (err?.message || err);
+      console.error(err);
+    } finally {
+      eliminando = false;
     }
   }
 
@@ -598,6 +625,24 @@
       {/if}
     </section>
   </div>
+
+  <!-- Botón para eliminar profesor al final de la pantalla -->
+  {#if formData?.id}
+    <div class="footer-delete" style="margin-top:18px;">
+      <button
+        class="btn-delete"
+        on:click={eliminarProfesor}
+        disabled={cargando || cargandoDatos || eliminando}
+        title="Eliminar profesor"
+      >
+        {#if eliminando}
+          <span class="spinner"></span> Eliminando...
+        {:else}
+          🗑️ Eliminar Profesor
+        {/if}
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -818,6 +863,35 @@
 
   .asignar-form {
     margin-bottom: 20px;
+  }
+
+  .footer-delete {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+
+  .btn-delete {
+    background: #ef4444;
+    color: #fff;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    transition: transform 0.12s, background 0.12s;
+  }
+
+  .btn-delete:hover:not(:disabled) {
+    background: #dc2626;
+    transform: translateY(-2px);
+  }
+
+  .btn-delete:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
   }
 
   @media (min-width: 640px) {
