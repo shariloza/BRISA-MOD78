@@ -1,6 +1,7 @@
 <script lang="ts">
   import ProfesorDetalle from "./components/ProfesorDetalle.svelte";
   import NuevoProfesor from "./components/NuevoProfesor.svelte";
+  import EditarProfesores from "./components/EditarProfesores.svelte";
   import {
     Home,
     Users,
@@ -70,6 +71,7 @@
   let profesorSeleccionado: Profesor | null = null;
   let searchQuery = "";
   let mostrarNuevoProfesor = false;
+  let mostrarEditarProfesor = false;
   let profesorEditando: Profesor | null = null;
 
   onMount(async () => {
@@ -102,38 +104,18 @@
     }
   });
 
-  // ya no selecciona para ver detalles al hacer click: ahora abre el editor
+  // Recuperar datos completos desde la API y abrir editor
   async function abrirEdicionProfesor(p?: Profesor) {
-    // abrir en blanco
+    // Abrir en blanco para NUEVO profesor
     if (!p) {
       profesorEditando = null;
       mostrarNuevoProfesor = true;
       return;
     }
 
-    // intentar recuperar datos completos desde el servidor
-    const id = p.id ?? (p as any).id_persona;
-    if (!id) {
-      // fallback a los datos que ya tenemos
-      profesorEditando = { ...p };
-      mostrarNuevoProfesor = true;
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/${id}`);
-      if (!res.ok) throw new Error("Error al obtener profesor");
-      const data = await res.json();
-      profesorEditando = data;
-    } catch (err) {
-      console.error(
-        "No se pudo recuperar detalles del profesor, usando datos locales:",
-        err,
-      );
-      profesorEditando = { ...p };
-    } finally {
-      mostrarNuevoProfesor = true;
-    }
+    // Abrir editor para EDITAR profesor existente
+    profesorEditando = p;
+    mostrarEditarProfesor = true;
   }
 
   function volverALista() {
@@ -154,14 +136,14 @@
         (p) => (p.id ?? p.id_persona) == savedId,
       );
       if (idx !== -1) {
-        // reemplazar el existente
+        // Reemplazar el existente
         profesores = profesores.map((p, i) => (i === idx ? saved : p));
       } else {
-        // agregar si no estaba
+        // Agregar si no estaba
         profesores = [...profesores, saved];
       }
     } else {
-      // sin id, agregar igual
+      // Sin id, agregar igual
       profesores = [...profesores, saved];
     }
 
@@ -171,6 +153,35 @@
 
   function onCancelNuevoProfesor() {
     mostrarNuevoProfesor = false;
+    profesorEditando = null;
+  }
+
+  function onCancelEditarProfesor() {
+    mostrarEditarProfesor = false;
+    profesorEditando = null;
+  }
+
+  function onSaveEditarProfesor(event: CustomEvent) {
+    const saved = event.detail;
+    const savedId = saved.id ?? saved.id_persona ?? null;
+
+    if (savedId != null) {
+      const idx = profesores.findIndex(
+        (p) => (p.id ?? p.id_persona) == savedId,
+      );
+      if (idx !== -1) {
+        // Reemplazar el existente
+        profesores = profesores.map((p, i) => (i === idx ? saved : p));
+      } else {
+        // Agregar si no estaba
+        profesores = [...profesores, saved];
+      }
+    } else {
+      // Sin id, agregar igual
+      profesores = [...profesores, saved];
+    }
+
+    mostrarEditarProfesor = false;
     profesorEditando = null;
   }
 
@@ -188,7 +199,7 @@
     return cumpleBusqueda && cumpleMateria;
   });
 
-  // helpers para normalizar nombre y apellidos
+  // Helpers para normalizar nombre y apellidos
   function getSurname(p: any) {
     const candidates = [
       p.apellido_paterno,
@@ -285,9 +296,15 @@
   <div class="main-wrap">
     {#if mostrarNuevoProfesor}
       <NuevoProfesor
-        profesorInit={profesorEditando}
+        profesorInit={null}
         on:save={onSaveProfesor}
         on:cancel={onCancelNuevoProfesor}
+      />
+    {:else if mostrarEditarProfesor}
+      <EditarProfesores
+        profesor={profesorEditando}
+        on:save={onSaveEditarProfesor}
+        on:cancel={onCancelEditarProfesor}
       />
     {:else}
       <header class="topbar">
@@ -946,5 +963,64 @@
     100% {
       box-shadow: 0 0 0 0 rgba(0, 207, 230, 0);
     }
+  }
+
+  /* Nuevo estilo para el editor de profesor */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 0;
+    border-bottom: 1px solid #eef6f9;
+    margin-bottom: 24px;
+  }
+
+  .icon-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .icon {
+    font-size: 28px;
+    color: var(--accent);
+  }
+
+  h2 {
+    margin: 0;
+    font-size: 1.4rem;
+    color: #1e293b;
+  }
+
+  p {
+    margin: 4px 0 0 0;
+    color: #6b7f86;
+    font-size: 0.9rem;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 10px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .btn-outline {
+    background: none;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 10px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 500;
   }
 </style>

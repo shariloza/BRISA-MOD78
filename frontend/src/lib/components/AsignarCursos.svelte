@@ -3,21 +3,26 @@
 
   export let idProfesor: number | null = null;
   export let asignaciones: any[] = []; // la lista viene del padre
+  export let materias: any[] | null = null; // si el padre pasa materias, usar esas
   const API_URL = "http://localhost:8000/api/profesores";
   const dispatch = createEventDispatcher();
 
   let cursos = [];
-  let materias = [];
   let asignacion = { id_curso: "", id_materia: "" };
 
   async function cargarDatos() {
     try {
-      const [resCursos, resMaterias] = await Promise.all([
-        fetch(`${API_URL}/cursos`),
-        fetch(`${API_URL}/materias`),
-      ]);
-      cursos = await resCursos.json();
-      materias = await resMaterias.json();
+      // cargar cursos siempre (no lo pasa el padre)
+      const resCursos = await fetch(`${API_URL}/cursos`);
+      cursos = resCursos.ok ? await resCursos.json() : [];
+
+      // materias: si el padre ya las pasó, no hacer fetch adicional
+      if (Array.isArray(materias) && materias.length > 0) {
+        // usar la prop `materias` pasada
+      } else {
+        const resMaterias = await fetch(`${API_URL}/materias`);
+        materias = resMaterias.ok ? await resMaterias.json() : [];
+      }
     } catch (error) {
       console.error("Error:", error);
     }

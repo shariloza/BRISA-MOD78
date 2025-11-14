@@ -10,7 +10,9 @@
     cancel: void;
   }>();
 
-  let profesor = {
+  let profesor: any = {
+    id: null,
+    id_persona: null,
     ci: "", nombres: "", apellido_paterno: "", apellido_materno: "",
     direccion: "", telefono: "", correo: "", tipo_persona: "profesor",
     estado_laboral: "activo"
