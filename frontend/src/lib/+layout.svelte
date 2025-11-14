@@ -6,7 +6,7 @@
     Home,
     Users,
     BookOpen,
-    Layers,
+    Layers,  
     Bell,
     Search,
     LogOut,
@@ -30,6 +30,7 @@
     { icon: BookOpen, label: "Profesores" },
     { icon: Layers, label: "Cursos" },
     { icon: Layers, label: "Administrativos" },
+    
     { icon: Layers, label: "Retiros Tempranos" },
     { icon: Layers, label: "Incidentes" },
     { icon: Layers, label: "Esquelas" },
