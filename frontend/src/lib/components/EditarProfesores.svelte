@@ -22,6 +22,7 @@
 
   const API_URL = "http://localhost:8000/api/profesores";
   const API_MATERIAS_URL = "http://localhost:8000/api/profesores/materias";
+  const API_CURSOS_URL = "http://localhost:8000/api/profesores/cursos";
 
   const dispatch = createEventDispatcher<{
     save: any;
@@ -38,23 +39,42 @@
     correo: "",
     tipo_persona: "profesor",
     estado_laboral: "activo",
-    id: null as number | null
+    id: null as number | null,
   };
 
   let formErrors = {
     ci: false,
     nombres: false,
     apellido_paterno: false,
-    correo: false
+    correo: false,
   };
 
   let asignacionesGuardadas: any[] = [];
+  let asignacionesParaEliminar: any[] = [];
   let cargando = false;
   let errorMessage = "";
   let cargandoDatos = false;
   let materias: any[] = [];
+  let cursos: any[] = [];
+  let todasAsignaciones: any[] = [];
+  let hayCambiosPendientes = false;
 
-  // Recuperar datos completos desde la API
+  async function cargarDatosAuxiliares() {
+    try {
+      const [resMat, resCur, resAsig] = await Promise.all([
+        fetch(API_MATERIAS_URL),
+        fetch(API_CURSOS_URL),
+        fetch(`${API_URL}/asignaciones`),
+      ]);
+
+      if (resMat.ok) materias = await resMat.json();
+      if (resCur.ok) cursos = await resCur.json();
+      if (resAsig.ok) todasAsignaciones = await resAsig.json();
+    } catch (err) {
+      console.warn("Error cargando datos auxiliares", err);
+    }
+  }
+
   async function cargarProfesor(p: any) {
     cargandoDatos = true;
     errorMessage = "";
@@ -62,138 +82,115 @@
     try {
       if (!p) {
         formData = {
-          ci: "", nombres: "", apellido_paterno: "", apellido_materno: "",
-          direccion: "", telefono: "", correo: "", tipo_persona: "profesor",
-          estado_laboral: "activo", id: null
+          ci: "",
+          nombres: "",
+          apellido_paterno: "",
+          apellido_materno: "",
+          direccion: "",
+          telefono: "",
+          correo: "",
+          tipo_persona: "profesor",
+          estado_laboral: "activo",
+          id: null,
         };
         asignacionesGuardadas = [];
+        asignacionesParaEliminar = [];
+        hayCambiosPendientes = false;
         return;
       }
 
       const id = p.id ?? p.id_persona ?? null;
-      console.log("Cargando profesor con ID:", id);
-
-      if (id) {
-        // Recuperar datos completos desde la API
-        const res = await fetch(`${API_URL}/${id}`);
-        console.log("Response status:", res.status);
-        
-        if (res.ok) {
-          const data = await res.json();
-          console.log("Datos obtenidos:", data);
-          
-          formData = {
-            ci: data.ci ?? data.identificacion ?? data.documento ?? "",
-            nombres: data.nombres ?? data.name ?? data.nombre ?? "",
-            apellido_paterno: data.apellido_paterno ?? data.apellido1 ?? "",
-            apellido_materno: data.apellido_materno ?? data.apellido2 ?? "",
-            direccion: data.direccion ?? data.address ?? "",
-            telefono: data.telefono ?? data.phone ?? "",
-            correo: data.correo ?? data.email ?? data.email_address ?? "",
-            tipo_persona: data.tipo_persona ?? "profesor",
-            estado_laboral: data.estado_laboral ?? "activo",
-            id: data.id ?? data.id_persona ?? id
-          };
-
-          // Cargar asignaciones
-          if (Array.isArray(data.asignaciones) && data.asignaciones.length > 0) {
-            asignacionesGuardadas = data.asignaciones.map((a: any) => ({
-              id: a.id ?? null,
-              id_materia: a.id_materia ?? "",
-              id_curso: a.id_curso ?? "",
-              nombre_materia: a.nombre_materia ?? a.materia ?? "",
-              nombre_curso: a.nombre_curso ?? a.curso ?? ""
-            }));
-          } else {
-            const materiasData = Array.isArray(data.materias) ? data.materias : [];
-            const cursosData = Array.isArray(data.cursos) ? data.cursos : [];
-            asignacionesGuardadas = materiasData.map((materia: string, index: number) => ({
-              id: null,
-              id_materia: "",
-              id_curso: "",
-              nombre_materia: materia,
-              nombre_curso: cursosData[index] || ""
-            }));
-          }
-          
-          console.log("Profesor cargado exitosamente");
-          cargandoDatos = false;
-          return;
-        } else {
-          console.error("Error en API:", res.status, res.statusText);
-          throw new Error(`Error: ${res.status} ${res.statusText}`);
-        }
+      if (!id) {
+        formData = { ...formData, ...p, id: null };
+        asignacionesGuardadas = [];
+        asignacionesParaEliminar = [];
+        hayCambiosPendientes = false;
+        return;
       }
 
-      // Fallback: usar los datos que vienen en la prop
-      console.log("Sin ID, usando datos locales");
+      const resProf = await fetch(`${API_URL}/${id}?completo=false`);
+      if (!resProf.ok) throw new Error("No se pudo cargar el profesor");
+
+      const dataProf = await resProf.json();
+
       formData = {
-        ci: p.ci ?? "",
-        nombres: p.nombres ?? "",
-        apellido_paterno: p.apellido_paterno ?? "",
-        apellido_materno: p.apellido_materno ?? "",
-        direccion: p.direccion ?? "",
-        telefono: p.telefono ?? "",
-        correo: p.correo ?? "",
-        tipo_persona: p.tipo_persona ?? "profesor",
-        estado_laboral: p.estado_laboral ?? "activo",
-        id: p.id ?? p.id_persona ?? null
+        ci: dataProf.ci ?? "",
+        nombres: dataProf.nombres ?? "",
+        apellido_paterno: dataProf.apellido_paterno ?? "",
+        apellido_materno: dataProf.apellido_materno ?? "",
+        direccion: dataProf.direccion ?? "",
+        telefono: dataProf.telefono ?? "",
+        correo: dataProf.correo ?? "",
+        tipo_persona: dataProf.tipo_persona ?? "profesor",
+        estado_laboral: dataProf.estado_laboral ?? "activo",
+        id: dataProf.id ?? dataProf.id_persona ?? id,
       };
-      asignacionesGuardadas = [];
-      if (Array.isArray(p.materias) && p.materias.length > 0) {
-        const materiasData = p.materias;
-        const cursosData = Array.isArray(p.cursos) ? p.cursos : [];
-        asignacionesGuardadas = materiasData.map((materia: string, index: number) => ({
-          id: null,
-          id_materia: "",
-          id_curso: "",
-          nombre_materia: materia,
-          nombre_curso: cursosData[index] || ""
-        }));
-      }
-      
+
+      const asignacionesDelProfesor = todasAsignaciones.filter(
+        (a) => a.id_profesor === id,
+      );
+
+      asignacionesGuardadas = asignacionesDelProfesor.map((asig) => {
+        const materia = materias.find((m) => m.id_materia === asig.id_materia);
+        const curso = cursos.find((c) => c.id_curso === asig.id_curso);
+
+        return {
+          existeEnBD: true,
+          id_materia: asig.id_materia,
+          id_curso: asig.id_curso,
+          nombre_materia:
+            materia?.nombre_materia ?? `Materia ${asig.id_materia}`,
+          nombre_curso: curso?.nombre_curso ?? `Curso ${asig.id_curso}`,
+        };
+      });
+
+      asignacionesParaEliminar = [];
+      hayCambiosPendientes = false;
     } catch (err: any) {
-      console.error("Error cargando profesor:", err);
       errorMessage = `Error: ${err.message}`;
-      
-      // Fallback a datos locales
-      formData = {
-        ci: p?.ci ?? "",
-        nombres: p?.nombres ?? "",
-        apellido_paterno: p?.apellido_paterno ?? "",
-        apellido_materno: p?.apellido_materno ?? "",
-        direccion: p?.direccion ?? "",
-        telefono: p?.telefono ?? "",
-        correo: p?.correo ?? "",
-        tipo_persona: p?.tipo_persona ?? "profesor",
-        estado_laboral: p?.estado_laboral ?? "activo",
-        id: p?.id ?? p?.id_persona ?? null
-      };
+      console.error(err);
     } finally {
       cargandoDatos = false;
     }
   }
 
-  // Llamada reactiva cuando cambie la prop `profesor`
   $: if (profesor !== undefined && profesor !== null) {
     cargarProfesor(profesor);
   }
 
   function validarForm() {
     let isValid = true;
-    formErrors = { ci: false, nombres: false, apellido_paterno: false, correo: false };
+    formErrors = {
+      ci: false,
+      nombres: false,
+      apellido_paterno: false,
+      correo: false,
+    };
 
-    if (!formData.ci) { formErrors.ci = true; isValid = false; }
-    if (!formData.nombres) { formErrors.nombres = true; isValid = false; }
-    if (!formData.apellido_paterno) { formErrors.apellido_paterno = true; isValid = false; }
-    if (!formData.correo || !formData.correo.includes('@')) { formErrors.correo = true; isValid = false; }
+    if (!formData.ci) {
+      formErrors.ci = true;
+      isValid = false;
+    }
+    if (!formData.nombres) {
+      formErrors.nombres = true;
+      isValid = false;
+    }
+    if (!formData.apellido_paterno) {
+      formErrors.apellido_paterno = true;
+      isValid = false;
+    }
+    if (!formData.correo || !formData.correo.includes("@")) {
+      formErrors.correo = true;
+      isValid = false;
+    }
 
     return isValid;
   }
 
   async function guardarCambios() {
     if (!validarForm()) {
-      errorMessage = 'Por favor complete todos los campos requeridos correctamente';
+      errorMessage =
+        "Por favor complete todos los campos requeridos correctamente";
       return;
     }
 
@@ -201,120 +198,188 @@
     errorMessage = "";
 
     try {
-      const method = 'PUT';
+      const method = "PUT";
       const url = `${API_URL}/${formData.id}`;
 
       const resProf = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
       });
 
-      if (!resProf.ok) throw new Error('Error al guardar profesor');
+      if (!resProf.ok) throw new Error("Error al guardar profesor");
       const profesorActualizado = await resProf.json();
 
-      // Guardar solo las asignaciones NUEVAS (sin id)
-      const nuevas = asignacionesGuardadas.filter(a => !a.id);
-      if (nuevas.length > 0) {
-        const promesas = nuevas.map(asig =>
-          fetch(`${API_URL}/asignaciones`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id_profesor: formData.id,
-              id_curso: Number(asig.id_curso),
-              id_materia: Number(asig.id_materia)
-            })
-          })
-        );
-        const resultados = await Promise.all(promesas);
-        for (const r of resultados) {
+      // Eliminar asignaciones marcadas
+      if (asignacionesParaEliminar.length > 0) {
+        const promesasEliminar = asignacionesParaEliminar.map((asig) => {
+          const url = new URL(`${API_URL}/asignaciones`);
+          url.searchParams.append("id_profesor", String(formData.id));
+          url.searchParams.append("id_curso", String(asig.id_curso));
+          url.searchParams.append("id_materia", String(asig.id_materia));
+          return fetch(url, { method: "DELETE" });
+        });
+
+        const resultadosEliminar = await Promise.all(promesasEliminar);
+        for (const r of resultadosEliminar) {
           if (!r.ok) {
-            const err = await r.json().catch(()=>null);
-            throw new Error(err?.detail || 'Error al guardar una asignación');
+            const err = await r.json().catch(() => null);
+            throw new Error(err?.detail || "Error al eliminar una asignación");
           }
         }
       }
 
-      // Construir objeto para UI
-      const materiasUI = [...new Set(asignacionesGuardadas.map(a => (a.nombre_materia || a.materia || '').toString()).filter(Boolean))];
-      const cursosUI = [...new Set(asignacionesGuardadas.map(a => (a.nombre_curso || a.curso || '').toString()).filter(Boolean))];
+      // Guardar solo las asignaciones NUEVAS
+      const nuevas = asignacionesGuardadas.filter((a) => !a.existeEnBD);
+      if (nuevas.length > 0) {
+        const promesas = nuevas.map((asig) =>
+          fetch(`${API_URL}/asignaciones`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id_profesor: formData.id,
+              id_curso: Number(asig.id_curso),
+              id_materia: Number(asig.id_materia),
+            }),
+          }),
+        );
+        const resultados = await Promise.all(promesas);
+        for (const r of resultados) {
+          if (!r.ok) {
+            const err = await r.json().catch(() => null);
+            throw new Error(err?.detail || "Error al guardar una asignación");
+          }
+        }
+      }
+
+      const materiasUI = [
+        ...new Set(
+          asignacionesGuardadas
+            .map((a) => (a.nombre_materia || "").toString())
+            .filter(Boolean),
+        ),
+      ];
+      const cursosUI = [
+        ...new Set(
+          asignacionesGuardadas
+            .map((a) => (a.nombre_curso || "").toString())
+            .filter(Boolean),
+        ),
+      ];
 
       const profesorParaUI = {
         ...profesorActualizado,
-        id: profesorActualizado.id ?? profesorActualizado.id_persona ?? formData.id,
+        id:
+          profesorActualizado.id ??
+          profesorActualizado.id_persona ??
+          formData.id,
         nombres: profesorActualizado.nombres || formData.nombres,
         materias: materiasUI,
         cursos: cursosUI,
-        estado_laboral: profesorActualizado.estado_laboral || formData.estado_laboral
+        estado_laboral:
+          profesorActualizado.estado_laboral || formData.estado_laboral,
       };
 
-      errorMessage = 'Profesor actualizado exitosamente';
-      dispatch('save', profesorParaUI);
+      asignacionesParaEliminar = [];
+      hayCambiosPendientes = false;
+      errorMessage = "✓ Profesor actualizado exitosamente";
+      
+      setTimeout(() => {
+        dispatch("save", profesorParaUI);
+      }, 1500);
     } catch (error: any) {
-      errorMessage = 'Error: ' + error.message;
+      errorMessage = "✗ Error: " + error.message;
     } finally {
       cargando = false;
     }
   }
 
   function cancelar() {
+    if (hayCambiosPendientes) {
+      const confirmar = confirm(
+        "Hay cambios sin guardar. ¿Está seguro que desea cancelar?",
+      );
+      if (!confirmar) return;
+    }
+
     formData = {
-      ci: "", nombres: "", apellido_paterno: "", apellido_materno: "",
-      direccion: "", telefono: "", correo: "", tipo_persona: "profesor",
-      estado_laboral: "activo", id: null
+      ci: "",
+      nombres: "",
+      apellido_paterno: "",
+      apellido_materno: "",
+      direccion: "",
+      telefono: "",
+      correo: "",
+      tipo_persona: "profesor",
+      estado_laboral: "activo",
+      id: null,
     };
     asignacionesGuardadas = [];
-    formErrors = { ci: false, nombres: false, apellido_paterno: false, correo: false };
+    asignacionesParaEliminar = [];
+    formErrors = {
+      ci: false,
+      nombres: false,
+      apellido_paterno: false,
+      correo: false,
+    };
     errorMessage = "";
+    hayCambiosPendientes = false;
     dispatch("cancel");
   }
 
   function onAsignado(e: CustomEvent) {
     const nuevaAsignacion = {
+      existeEnBD: false,
       id_materia: e.detail.id_materia,
       id_curso: e.detail.id_curso,
       nombre_materia: e.detail.nombre_materia || e.detail.materia,
-      nombre_curso: e.detail.nombre_curso || e.detail.curso
+      nombre_curso: e.detail.nombre_curso || e.detail.curso,
     };
-    const exists = asignacionesGuardadas.some(a => (a.id_materia == nuevaAsignacion.id_materia && a.id_curso == nuevaAsignacion.id_curso));
+    const exists = asignacionesGuardadas.some(
+      (a) =>
+        a.id_materia == nuevaAsignacion.id_materia &&
+        a.id_curso == nuevaAsignacion.id_curso,
+    );
     if (!exists) {
       asignacionesGuardadas = [...asignacionesGuardadas, nuevaAsignacion];
+      hayCambiosPendientes = true;
     }
   }
 
-  async function eliminarAsignacion(index: number) {
+  function marcarParaEliminar(index: number) {
     const asig = asignacionesGuardadas[index];
     if (!asig) return;
 
-    const asignacionId = asig.id ?? asig.id_asignacion ?? null;
-    if (asignacionId) {
-      try {
-        const res = await fetch(`${API_URL}/asignaciones/${asignacionId}`, {
-          method: 'DELETE'
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(()=>null);
-          throw new Error(err?.detail || 'Error al eliminar asignación en servidor');
-        }
-      } catch (err: any) {
-        alert('No se pudo eliminar la asignación en el servidor: ' + (err?.message || err));
-        return;
-      }
+    // Si existe en BD, agregar a lista de eliminación
+    if (asig.existeEnBD) {
+      asignacionesParaEliminar = [...asignacionesParaEliminar, asig];
     }
+
+    // Eliminar de la lista local
     asignacionesGuardadas = asignacionesGuardadas.filter((_, i) => i !== index);
+    hayCambiosPendientes = true;
+  }
+
+  function restaurarAsignacion(index: number) {
+    const asig = asignacionesParaEliminar[index];
+    if (!asig) return;
+
+    // Restaurar a la lista de asignaciones
+    asignacionesGuardadas = [...asignacionesGuardadas, asig];
+    
+    // Quitar de la lista de eliminación
+    asignacionesParaEliminar = asignacionesParaEliminar.filter(
+      (_, i) => i !== index,
+    );
+    
+    hayCambiosPendientes = asignacionesParaEliminar.length > 0 || 
+      asignacionesGuardadas.some(a => !a.existeEnBD);
   }
 
   onMount(async () => {
-    try {
-      const res = await fetch(API_MATERIAS_URL);
-      if (res.ok) {
-        materias = await res.json();
-      } else {
-        console.warn("No se pudieron cargar materias:", res.status);
-      }
-    } catch (err) {
-      console.warn("Error cargando materias:", err);
+    await cargarDatosAuxiliares();
+    if (profesor) {
+      cargarProfesor(profesor);
     }
   });
 </script>
@@ -325,52 +390,84 @@
       <div class="icon">✏️</div>
       <div>
         <h2>Editar Profesor</h2>
-        <p>Actualice los datos y asignaciones</p>
+        <p>Actualice los datos y asignaciones del profesor</p>
       </div>
     </div>
     <div class="actions">
-      <button class="btn-outline" on:click={cancelar} disabled={cargando || cargandoDatos}>
+      <button
+        class="btn-outline"
+        on:click={cancelar}
+        disabled={cargando || cargandoDatos}
+      >
         Cancelar
       </button>
-      <button class="btn-primary" on:click={guardarCambios} disabled={cargando || cargandoDatos}>
-        {cargando ? '⏳ Guardando...' : cargandoDatos ? '⏳ Cargando...' : 'Guardar Cambios'}
+      <button
+        class="btn-primary"
+        on:click={guardarCambios}
+        disabled={cargando || cargandoDatos}
+      >
+        {#if cargando}
+          <span class="spinner"></span>
+          Guardando...
+        {:else if cargandoDatos}
+          <span class="spinner"></span>
+          Cargando...
+        {:else}
+          💾 Guardar Cambios
+        {/if}
       </button>
     </div>
   </div>
 
+  {#if hayCambiosPendientes}
+    <div class="alert alert-warning">
+      ⚠️ Hay cambios pendientes sin guardar. Haga clic en "Guardar Cambios" para
+      aplicar los cambios.
+    </div>
+  {/if}
+
   {#if cargandoDatos}
-    <div class="alert">
-      ⏳ Cargando datos del profesor...
+    <div class="alert alert-info">
+      <span class="spinner"></span>
+      Cargando datos del profesor...
     </div>
   {/if}
 
   {#if errorMessage}
-    <div class="alert" class:success={errorMessage.includes('exitosamente')} class:error={!errorMessage.includes('exitosamente')}>
+    <div
+      class="alert"
+      class:alert-success={errorMessage.includes("exitosamente")}
+      class:alert-error={!errorMessage.includes("exitosamente")}
+    >
       {errorMessage}
     </div>
   {/if}
 
   <div class="form">
-    <!-- Información Personal -->
     <section>
-      <h3>Información Personal</h3>
+      <h3>📋 Información Personal</h3>
       <div class="form-row single">
         <div class="form-group">
           <label class:error={formErrors.ci}>CI *</label>
-          <input 
-            type="text" 
-            bind:value={formData.ci} 
-            placeholder="Ej: 1234567" 
+          <input
+            type="text"
+            bind:value={formData.ci}
+            placeholder="Ej: 1234567"
             class:error={formErrors.ci}
             disabled={cargando || cargandoDatos}
           />
-          {#if formErrors.ci}<span class="error-message">El CI es requerido</span>{/if}
+          {#if formErrors.ci}
+            <span class="error-message">El CI es requerido</span>
+          {/if}
         </div>
         <div class="form-group">
           <label>Estado Laboral</label>
-          <select bind:value={formData.estado_laboral} disabled={cargando || cargandoDatos}>
-            <option value="activo">Activo</option>
-            <option value="inactivo">Inactivo</option>
+          <select
+            bind:value={formData.estado_laboral}
+            disabled={cargando || cargandoDatos}
+          >
+            <option value="activo">✓ Activo</option>
+            <option value="inactivo">✗ Inactivo</option>
           </select>
         </div>
       </div>
@@ -378,34 +475,40 @@
       <div class="form-row">
         <div class="form-group">
           <label class:error={formErrors.nombres}>Nombres *</label>
-          <input 
-            type="text" 
-            bind:value={formData.nombres} 
-            placeholder="Ej: Juan Carlos" 
+          <input
+            type="text"
+            bind:value={formData.nombres}
+            placeholder="Ej: Juan Carlos"
             class:error={formErrors.nombres}
             disabled={cargando || cargandoDatos}
           />
-          {#if formErrors.nombres}<span class="error-message">Los nombres son requeridos</span>{/if}
+          {#if formErrors.nombres}
+            <span class="error-message">Los nombres son requeridos</span>
+          {/if}
         </div>
       </div>
 
       <div class="form-row">
         <div class="form-group">
-          <label class:error={formErrors.apellido_paterno}>Apellido Paterno *</label>
-          <input 
-            type="text" 
-            bind:value={formData.apellido_paterno} 
-            placeholder="Ej: Pérez" 
+          <label class:error={formErrors.apellido_paterno}
+            >Apellido Paterno *</label
+          >
+          <input
+            type="text"
+            bind:value={formData.apellido_paterno}
+            placeholder="Ej: Pérez"
             class:error={formErrors.apellido_paterno}
             disabled={cargando || cargandoDatos}
           />
-          {#if formErrors.apellido_paterno}<span class="error-message">El apellido paterno es requerido</span>{/if}
+          {#if formErrors.apellido_paterno}
+            <span class="error-message">El apellido paterno es requerido</span>
+          {/if}
         </div>
         <div class="form-group">
           <label>Apellido Materno</label>
-          <input 
-            type="text" 
-            bind:value={formData.apellido_materno} 
+          <input
+            type="text"
+            bind:value={formData.apellido_materno}
             placeholder="Ej: García"
             disabled={cargando || cargandoDatos}
           />
@@ -413,26 +516,27 @@
       </div>
     </section>
 
-    <!-- Información de Contacto -->
     <section>
-      <h3>Información de Contacto</h3>
+      <h3>📞 Información de Contacto</h3>
       <div class="form-row">
         <div class="form-group">
           <label class:error={formErrors.correo}>Correo Electrónico *</label>
-          <input 
-            type="email" 
-            bind:value={formData.correo} 
-            placeholder="profesor@escuela.edu" 
+          <input
+            type="email"
+            bind:value={formData.correo}
+            placeholder="profesor@escuela.edu"
             class:error={formErrors.correo}
             disabled={cargando || cargandoDatos}
           />
-          {#if formErrors.correo}<span class="error-message">Ingrese un correo válido</span>{/if}
+          {#if formErrors.correo}
+            <span class="error-message">Ingrese un correo válido</span>
+          {/if}
         </div>
         <div class="form-group">
           <label>Teléfono</label>
-          <input 
-            type="tel" 
-            bind:value={formData.telefono} 
+          <input
+            type="tel"
+            bind:value={formData.telefono}
             placeholder="+591 789-0000"
             disabled={cargando || cargandoDatos}
           />
@@ -441,9 +545,9 @@
       <div class="form-row">
         <div class="form-group">
           <label>Dirección</label>
-          <input 
-            type="text" 
-            bind:value={formData.direccion} 
+          <input
+            type="text"
+            bind:value={formData.direccion}
             placeholder="Av. Principal #123"
             disabled={cargando || cargandoDatos}
           />
@@ -451,20 +555,47 @@
       </div>
     </section>
 
-    <!-- Asignaciones -->
     <section>
-      <h3>Asignación de Materias y Cursos</h3>
-      <p class="subtitle">Agregue o modifique las asignaciones</p>
+      <h3>📚 Asignación de Materias y Cursos</h3>
+      <p class="subtitle">Gestione las materias y cursos del profesor</p>
 
       <div class="asignar-form">
         <AsignarCursos
           idProfesor={formData.id}
           asignaciones={asignacionesGuardadas}
-          materias={materias}
+          {materias}
           on:asignado={onAsignado}
-          on:remove={(e) => eliminarAsignacion(e.detail.index)}
+          on:remove={(e) => marcarParaEliminar(e.detail.index)}
         />
       </div>
+
+      {#if asignacionesParaEliminar.length > 0}
+        <div class="eliminadas-section">
+          <h4>
+            🗑️ Asignaciones marcadas para eliminar ({asignacionesParaEliminar.length})
+          </h4>
+          <p class="subtitle-small">
+            Estas asignaciones se eliminarán al guardar los cambios
+          </p>
+          <div class="eliminadas-list">
+            {#each asignacionesParaEliminar as asig, index}
+              <div class="asignacion-eliminada">
+                <div class="asignacion-info">
+                  <span class="materia-badge">{asig.nombre_materia}</span>
+                  <span class="curso-badge">{asig.nombre_curso}</span>
+                </div>
+                <button
+                  class="btn-restaurar"
+                  on:click={() => restaurarAsignacion(index)}
+                  title="Restaurar asignación"
+                >
+                  ↺ Restaurar
+                </button>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
     </section>
   </div>
 </div>
@@ -635,7 +766,8 @@
     font-weight: 500;
   }
 
-  input, select {
+  input,
+  select {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid #e2e8f0;
@@ -646,13 +778,15 @@
     transition: border-color 0.2s;
   }
 
-  input:disabled, select:disabled {
+  input:disabled,
+  select:disabled {
     background: #f1f5f9;
     color: #94a3b8;
     cursor: not-allowed;
   }
 
-  input:focus, select:focus {
+  input:focus,
+  select:focus {
     outline: none;
     border-color: #00cfe6;
     box-shadow: 0 0 0 3px rgba(0, 207, 230, 0.1);
@@ -712,4 +846,136 @@
       justify-content: flex-end;
     }
   }
+
+/* === SECCIÓN: ASIGNACIONES MARCADAS PARA ELIMINAR (ESTILO BRISA) === */
+.eliminadas-section {
+  background: #ecfdf5; /* Verde muy claro (coherente con éxito) */
+  border: 1px solid #6ee7b4; /* Borde verde cian */
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.eliminadas-section h4 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: #0f766e; /* Verde oscuro (como éxito) */
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.subtitle-small {
+  color: #0f766e;
+  font-size: 0.85rem;
+  margin: -4px 0 12px;
+  font-style: italic;
+}
+
+.eliminadas-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.asignacion-eliminada {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f0fdf4; /* Verde más claro */
+  padding: 10px 12px;
+  border-radius: 6px;
+  border-left: 4px solid #10b981; /* Línea lateral verde */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.asignacion-info {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex: 1;
+}
+
+.materia-badge,
+.curso-badge {
+  background: #10b981; /* Verde esmeralda */
+  color: white;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.curso-badge {
+  background: #059669; /* Verde más oscuro */
+}
+
+.btn-restaurar {
+  background: #00cfe6; /* TU COLOR PRINCIPAL */
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.btn-restaurar:hover {
+  background: #00b8d4;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 207, 230, 0.2);
+}
+
+.btn-restaurar:active {
+  transform: translateY(0);
+}
+
+/* Alertas coherentes con BRISA */
+.alert-warning {
+  background: #ecfdf5;
+  color: #0f766e;
+  border: 1px solid #6ee7b4;
+}
+
+.alert-info {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+.alert-success {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.alert-error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+/* Spinner para botones */
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffffff40;
+  border-top: 2px solid #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 </style>
