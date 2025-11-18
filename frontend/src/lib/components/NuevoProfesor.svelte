@@ -144,7 +144,7 @@
         }
       }
       
-      // 2) Actualizar
+      // 2) Actualizar lOS BLOQUES
       if (bloquesPendientesActualizar.length > 0) {
         for (const b of bloquesPendientesActualizar) {
           const body = {
