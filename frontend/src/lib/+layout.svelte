@@ -18,6 +18,7 @@
 
   const API_URL = "http://localhost:8000/api/profesores";
   const API_MATERIAS_URL = "http://localhost:8000/api/profesores/materias";
+  const API_BLOQUES_URL = "http://localhost:8000/api/profesores";
   
   // Configuración de polling (actualización automática cada X segundos)
   const POLLING_INTERVAL = 5000; // 5 segundos
@@ -51,6 +52,7 @@
 
   type Profesor = {
     id?: number;
+    id_persona?: number;
     nombres: string;
     apellido_paterno?: string;
     apellido_materno?: string;
@@ -65,7 +67,7 @@
     años_experiencia?: number;
     fecha_contratacion?: string;
     estado_laboral: string;
-    cargaHoraria?: string;
+    cargaHoraria?: number;
     materias?: string[];
     cursos?: string[];
   };
@@ -97,6 +99,41 @@
 
   let profesoresHash = "";
   let materiasHash = "";
+  let cargasHorarias: { [key: number]: number } = {}; // Almacenar carga horaria por id_profesor
+
+  // Función para calcular horas entre dos tiempos
+  function calcularHoras(hora_inicio: string, hora_fin: string): number {
+    try {
+      const inicio = new Date(`1970-01-01T${hora_inicio}`);
+      const fin = new Date(`1970-01-01T${hora_fin}`);
+      const diff = fin.getTime() - inicio.getTime();
+      return diff / (1000 * 60 * 60); // Convertir a horas
+    } catch {
+      return 0;
+    }
+  }
+
+  // Función para cargar bloques y calcular carga horaria de un profesor
+  async function cargarCargaHoraria(idProfesor: number): Promise<number> {
+    try {
+      const response = await fetch(`${API_BLOQUES_URL}/${idProfesor}/bloques`);
+      if (!response.ok) return 0;
+      
+      const bloques = await response.json();
+      if (!Array.isArray(bloques)) return 0;
+      
+      // Sumar todas las horas de los bloques
+      const totalHoras = bloques.reduce((total, bloque) => {
+        const horas = calcularHoras(bloque.hora_inicio, bloque.hora_fin);
+        return total + horas;
+      }, 0);
+      
+      return Math.round(totalHoras * 10) / 10; // Redondear a 1 decimal
+    } catch (error) {
+      console.error(`Error cargando bloques para profesor ${idProfesor}:`, error);
+      return 0;
+    }
+  }
 
   // Función para cargar profesores
   async function cargarProfesores(silent = false) {
@@ -116,9 +153,26 @@
         hasChanges = true;
         lastUpdate = new Date();
         
+        // Cargar carga horaria para cada profesor en paralelo
+        const cargaPromises = profesores.map(async (profesor) => {
+          const idProfesor = profesor.id ?? profesor.id_persona;
+          if (idProfesor) {
+            const carga = await cargarCargaHoraria(idProfesor);
+            cargasHorarias[idProfesor] = carga;
+          }
+        });
+        
+        await Promise.all(cargaPromises);
+        
+        // Actualizar profesores con la carga horaria
+        profesores = profesores.map(p => ({
+          ...p,
+          cargaHoraria: cargasHorarias[p.id ?? p.id_persona] || 0
+        }));
+        
         // Si había un profesor seleccionado, actualizarlo
         if (profesorEditando) {
-          const updated = data.find((p: Profesor) => 
+          const updated = profesores.find((p: Profesor) => 
             (p.id ?? p.id_persona) === (profesorEditando.id ?? profesorEditando.id_persona)
           );
           if (updated) profesorEditando = updated;
@@ -523,7 +577,9 @@
                     <div class="footer">
                       <div class="left">
                         <Clock size="16" color="#64748b" />
-                        <span class="carga">{profesor.cargaHoraria || 0}</span>
+                        <span class="carga">
+                          {profesor.cargaHoraria ?? 0}h/sem
+                        </span>
                       </div>
                       <div class="right">
                         <span
@@ -700,83 +756,6 @@
     left: 90px;
   }
 
-  /* Sync Status Styles */
-  .sync-status {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 14px;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 2px 6px rgba(20, 40, 60, 0.03);
-  }
-
-  .refresh-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 6px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    color: #64748b;
-  }
-
-  .refresh-btn:hover:not(:disabled) {
-    background: #f1f5f9;
-    color: var(--accent);
-  }
-
-  .refresh-btn:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-  }
-
-  .refresh-btn.spinning {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-
-  .status-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .status-text {
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: #64748b;
-  }
-
-  .new-changes {
-    color: #00cfe6;
-    font-weight: 600;
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
-  }
-
-  .last-update {
-    font-size: 0.75rem;
-    color: #94a3b8;
-  }
-
-  .loading-indicator {
-    font-size: 0.85rem;
-    color: var(--accent);
-    font-weight: 500;
-  }
-
   .top-actions {
     display: flex;
     align-items: center;
@@ -904,6 +883,12 @@
     margin: 0;
   }
 
+  .loading-indicator {
+    font-size: 0.85rem;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
   .grid-profesores {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1024,6 +1009,7 @@
 
   .carga {
     margin-left: 6px;
+    font-weight: 600;
   }
 
   .estado-pill {
@@ -1042,6 +1028,12 @@
     background: #fff6e6;
     color: #ff9800;
     border-color: rgba(255, 152, 0, 0.12);
+  }
+
+  .right-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   @media (max-width: 1200px) {
@@ -1077,14 +1069,6 @@
     }
 
     .user-info {
-      display: none;
-    }
-
-    .sync-status {
-      padding: 6px 10px;
-    }
-
-    .status-info {
       display: none;
     }
   }
