@@ -11,19 +11,24 @@
     Search,
     LogOut,
     Clock,
+    RefreshCw,
   } from "lucide-svelte";
   import { writable } from "svelte/store";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
 
   const API_URL = "http://localhost:8000/api/profesores";
   const API_MATERIAS_URL = "http://localhost:8000/api/profesores/materias";
+  
+  // Configuración de polling (actualización automática cada X segundos)
+  const POLLING_INTERVAL = 5000; // 5 segundos
+  const FAST_POLLING_INTERVAL = 2000; // 2 segundos (después de cambios)
 
   // Sidebar
   let abierto = writable(true);
   function toggleSidebar() {
     abierto.update((v) => !v);
   }
-  //asdasd
+
   const menuItems = [
     { icon: Home, label: "Dashboard" },
     { icon: Users, label: "Usuarios y Roles" },
@@ -31,7 +36,6 @@
     { icon: BookOpen, label: "Profesores" },
     { icon: Layers, label: "Cursos" },
     { icon: Layers, label: "Administrativos" },
-
     { icon: Layers, label: "Retiros Tempranos" },
     { icon: Layers, label: "Incidentes" },
     { icon: Layers, label: "Esquelas" },
@@ -76,46 +80,150 @@
   let mostrarEditarProfesor = false;
   let profesorEditando: Profesor | null = null;
 
-  onMount(async () => {
-    try {
-      // Cargar profesores
-      const responseProfesores = await fetch(API_URL);
-      if (!responseProfesores.ok) throw new Error("Error cargando profesores");
-      const dataProfesores = await responseProfesores.json();
-      console.log("Profesores cargados:", dataProfesores);
-      profesores = dataProfesores;
+  // Variables para reactividad
+  let pollingInterval: number | null = null;
+  let isLoading = false;
+  let lastUpdate = new Date();
+  let isRefreshing = false;
+  let hasChanges = false;
 
-      // Cargar materias
-      console.log("Intentando cargar materias desde:", API_MATERIAS_URL);
-      const responseMaterias = await fetch(API_MATERIAS_URL);
-      console.log("Response materias status:", responseMaterias.status);
-      if (!responseMaterias.ok) {
-        console.error(
-          "Error en response materias:",
-          responseMaterias.statusText,
-        );
-        throw new Error("Error cargando materias");
+  // Hash simple para detectar cambios
+  function generateHash(data: any): string {
+    return JSON.stringify(data).split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0).toString();
+  }
+
+  let profesoresHash = "";
+  let materiasHash = "";
+
+  // Función para cargar profesores
+  async function cargarProfesores(silent = false) {
+    try {
+      if (!silent) isLoading = true;
+      
+      const response = await fetch(API_URL);
+      if (!response.ok) throw new Error("Error cargando profesores");
+      
+      const data = await response.json();
+      const newHash = generateHash(data);
+      
+      // Solo actualizar si hay cambios
+      if (newHash !== profesoresHash) {
+        profesores = data;
+        profesoresHash = newHash;
+        hasChanges = true;
+        lastUpdate = new Date();
+        
+        // Si había un profesor seleccionado, actualizarlo
+        if (profesorEditando) {
+          const updated = data.find((p: Profesor) => 
+            (p.id ?? p.id_persona) === (profesorEditando.id ?? profesorEditando.id_persona)
+          );
+          if (updated) profesorEditando = updated;
+        }
       }
-      const dataMaterias = await responseMaterias.json();
-      console.log("Materias cargadas (cantidad):", dataMaterias.length);
-      console.log("Materias cargadas (datos):", dataMaterias);
-      materias = dataMaterias;
-      console.log("Estado materias después de asignar:", materias);
+      
+      return data;
     } catch (error) {
-      console.error("Error completo:", error);
+      console.error("Error cargando profesores:", error);
+    } finally {
+      if (!silent) isLoading = false;
+      setTimeout(() => { hasChanges = false; }, 1000);
     }
+  }
+
+  // Función para cargar materias
+  async function cargarMaterias(silent = false) {
+    try {
+      const response = await fetch(API_MATERIAS_URL);
+      if (!response.ok) throw new Error("Error cargando materias");
+      
+      const data = await response.json();
+      const newHash = generateHash(data);
+      
+      if (newHash !== materiasHash) {
+        materias = data;
+        materiasHash = newHash;
+      }
+      
+      return data;
+    } catch (error) {
+      console.error("Error cargando materias:", error);
+    }
+  }
+
+  // Función para refrescar todo
+  async function refrescarDatos(silent = false) {
+    if (isRefreshing && !silent) return;
+    
+    isRefreshing = true;
+    await Promise.all([
+      cargarProfesores(silent),
+      cargarMaterias(silent)
+    ]);
+    isRefreshing = false;
+  }
+
+  // Iniciar polling automático
+  function iniciarPolling(intervalo = POLLING_INTERVAL) {
+    detenerPolling();
+    pollingInterval = setInterval(() => {
+      refrescarDatos(true);
+    }, intervalo) as unknown as number;
+  }
+
+  // Detener polling
+  function detenerPolling() {
+    if (pollingInterval !== null) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+  }
+
+  // Polling rápido temporal después de cambios
+  function activarPollingRapido(duracion = 10000) {
+    detenerPolling();
+    iniciarPolling(FAST_POLLING_INTERVAL);
+    
+    setTimeout(() => {
+      detenerPolling();
+      iniciarPolling(POLLING_INTERVAL);
+    }, duracion);
+  }
+
+  onMount(async () => {
+    await refrescarDatos();
+    iniciarPolling();
+    
+    // Refrescar al volver al tab
+    document.addEventListener('visibilitychange', handleVisibilityChange);
   });
 
-  // Recuperar datos completos desde la API y abrir editor
+  onDestroy(() => {
+    detenerPolling();
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  });
+
+  function handleVisibilityChange() {
+    if (!document.hidden) {
+      refrescarDatos(true);
+    }
+  }
+
+  // Refrescar manualmente
+  async function refrescarManual() {
+    await refrescarDatos(false);
+  }
+
   async function abrirEdicionProfesor(p?: Profesor) {
-    // Abrir en blanco para NUEVO profesor
     if (!p) {
       profesorEditando = null;
       mostrarNuevoProfesor = true;
       return;
     }
 
-    // Abrir editor para EDITAR profesor existente
     profesorEditando = p;
     mostrarEditarProfesor = true;
   }
@@ -129,28 +237,30 @@
     abrirEdicionProfesor(null);
   }
 
-  function onSaveProfesor(event: CustomEvent) {
+  async function onSaveProfesor(event: CustomEvent) {
     const saved = event.detail;
     const savedId = saved.id ?? saved.id_persona ?? null;
 
+    // Optimistic update
     if (savedId != null) {
       const idx = profesores.findIndex(
         (p) => (p.id ?? p.id_persona) == savedId,
       );
       if (idx !== -1) {
-        // Reemplazar el existente
         profesores = profesores.map((p, i) => (i === idx ? saved : p));
       } else {
-        // Agregar si no estaba
         profesores = [...profesores, saved];
       }
     } else {
-      // Sin id, agregar igual
       profesores = [...profesores, saved];
     }
 
     mostrarNuevoProfesor = false;
     profesorEditando = null;
+    
+    // Refrescar inmediatamente y activar polling rápido
+    await refrescarDatos(true);
+    activarPollingRapido();
   }
 
   function onCancelNuevoProfesor() {
@@ -163,28 +273,30 @@
     profesorEditando = null;
   }
 
-  function onSaveEditarProfesor(event: CustomEvent) {
+  async function onSaveEditarProfesor(event: CustomEvent) {
     const saved = event.detail;
     const savedId = saved.id ?? saved.id_persona ?? null;
 
+    // Optimistic update
     if (savedId != null) {
       const idx = profesores.findIndex(
         (p) => (p.id ?? p.id_persona) == savedId,
       );
       if (idx !== -1) {
-        // Reemplazar el existente
         profesores = profesores.map((p, i) => (i === idx ? saved : p));
       } else {
-        // Agregar si no estaba
         profesores = [...profesores, saved];
       }
     } else {
-      // Sin id, agregar igual
       profesores = [...profesores, saved];
     }
 
     mostrarEditarProfesor = false;
     profesorEditando = null;
+    
+    // Refrescar inmediatamente y activar polling rápido
+    await refrescarDatos(true);
+    activarPollingRapido();
   }
 
   $: profesoresFiltrados = profesores.filter((p) => {
@@ -201,7 +313,6 @@
     return cumpleBusqueda && cumpleMateria;
   });
 
-  // Helpers para normalizar nombre y apellidos
   function getSurname(p: any) {
     const candidates = [
       p.apellido_paterno,
@@ -248,6 +359,14 @@
     const letters = (a + b).toUpperCase();
     return letters || ((p.nombres || p.name || "")[0] || "?").toUpperCase();
   }
+
+  function formatTime(date: Date): string {
+    return date.toLocaleTimeString('es-BO', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  }
 </script>
 
 <div class="app">
@@ -278,7 +397,6 @@
           class="menu-item {i === 3 ? 'active' : ''}"
           on:click={() => {
             if (item.label === "Cerrar Sesión") {
-              // Aquí irá la lógica de cerrar sesión
               console.log("Cerrando sesión...");
             }
           }}
@@ -358,10 +476,15 @@
           </section>
 
           <section class="panel">
-            <h3>Lista de Profesores</h3>
+            <div class="panel-header">
+              <h3>Lista de Profesores ({profesoresFiltrados.length})</h3>
+              {#if isLoading}
+                <span class="loading-indicator">Cargando...</span>
+              {/if}
+            </div>
 
-            <div class="grid-profesores">
-              {#each profesoresFiltrados as profesor}
+            <div class="grid-profesores" class:updating={hasChanges}>
+              {#each profesoresFiltrados as profesor (profesor.id ?? profesor.ci)}
                 <div
                   class="card"
                   on:click={() => abrirEdicionProfesor(profesor)}
@@ -440,7 +563,6 @@
     --muted: #e9f0f4;
   }
 
-  /* layout */
   .app {
     display: flex;
     width: 100%;
@@ -455,7 +577,6 @@
     overflow: hidden;
   }
 
-  /* Sidebar */
   aside {
     background: var(--nav);
     color: #cfeaf4;
@@ -509,7 +630,6 @@
     color: #8fb9c6;
   }
 
-  /* menu */
   nav {
     display: flex;
     flex-direction: column;
@@ -543,13 +663,11 @@
     font-weight: 500;
   }
 
-  /* logout bottom */
   .nav-spacer {
     margin-top: auto;
     padding: 10px 6px;
   }
 
-  /* main content + topbar */
   .main-wrap {
     flex: 1;
     display: flex;
@@ -582,21 +700,83 @@
     left: 90px;
   }
 
-  .search {
+  /* Sync Status Styles */
+  .sync-status {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    padding: 8px 14px;
     background: #fff;
-    padding: 8px 12px;
     border-radius: 12px;
-    width: 640px;
     box-shadow: 0 2px 6px rgba(20, 40, 60, 0.03);
   }
-  .search input {
+
+  .refresh-btn {
+    background: none;
     border: none;
-    outline: none;
-    min-width: 300px;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    color: #64748b;
   }
+
+  .refresh-btn:hover:not(:disabled) {
+    background: #f1f5f9;
+    color: var(--accent);
+  }
+
+  .refresh-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .refresh-btn.spinning {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .status-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .status-text {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #64748b;
+  }
+
+  .new-changes {
+    color: #00cfe6;
+    font-weight: 600;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  .last-update {
+    font-size: 0.75rem;
+    color: #94a3b8;
+  }
+
+  .loading-indicator {
+    font-size: 0.85rem;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
   .top-actions {
     display: flex;
     align-items: center;
@@ -610,7 +790,14 @@
     border-radius: 10px;
     cursor: pointer;
     font-weight: 600;
+    transition: all 0.2s ease;
   }
+
+  .new-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 207, 230, 0.3);
+  }
+
   .user {
     display: flex;
     align-items: center;
@@ -636,7 +823,6 @@
     color: #6b7f86;
   }
 
-  /* page header and controls */
   main {
     padding: 96px 36px 24px;
     height: calc(100vh - 72px);
@@ -666,19 +852,17 @@
     background: #fff;
     color: #1e293b;
     font-size: 0.95rem;
+    transition: all 0.2s ease;
+  }
+
+  .filter-search:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0, 207, 230, 0.1);
   }
 
   .filter-search::placeholder {
     color: #94a3b8;
-  }
-
-  .filter-btn {
-    padding: 10px 12px;
-    border-radius: 10px;
-    background: #fff;
-    border: 1px solid #e7eef2;
-    color: #475569;
-    cursor: pointer;
   }
 
   .filter-select {
@@ -692,6 +876,7 @@
     font-size: 0.95rem;
     font-weight: 500;
     min-width: 200px;
+    transition: all 0.2s ease;
   }
 
   .filter-select:focus {
@@ -700,28 +885,6 @@
     border-color: var(--accent);
   }
 
-  .filter-select option {
-    color: #000000;
-    background-color: #ffffff;
-    padding: 10px;
-    font-weight: 500;
-  }
-
-  input,
-  select {
-    color: #1e293b !important;
-  }
-
-  select option {
-    color: #000000 !important;
-    background: #ffffff !important;
-  }
-
-  input::placeholder {
-    color: #94a3b8;
-  }
-
-  /* panel with cards */
   .panel {
     background: #fff;
     border-radius: 14px;
@@ -729,14 +892,35 @@
     box-shadow: 0 6px 18px rgba(25, 40, 60, 0.02);
     border: 1px solid #eef6fa;
   }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .panel-header h3 {
+    margin: 0;
+  }
+
   .grid-profesores {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 20px;
     margin-top: 14px;
+    transition: opacity 0.3s ease;
   }
 
-  /* Cards */
+  .grid-profesores.updating {
+    animation: fadeIn 0.5s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0.7; }
+    to { opacity: 1; }
+  }
+
   .card {
     background: #fff;
     border-radius: 12px;
@@ -864,11 +1048,8 @@
     .grid-profesores {
       grid-template-columns: repeat(2, 1fr);
     }
-
-    .search {
-      width: 400px;
-    }
   }
+  
   @media (max-width: 768px) {
     aside {
       width: 90px;
@@ -891,16 +1072,19 @@
       grid-template-columns: 1fr;
     }
 
-    .search {
-      width: 100%;
-      max-width: 300px;
-    }
-
     .top-actions {
       gap: 8px;
     }
 
     .user-info {
+      display: none;
+    }
+
+    .sync-status {
+      padding: 6px 10px;
+    }
+
+    .status-info {
       display: none;
     }
   }
@@ -917,7 +1101,6 @@
     }
   }
 
-  /* volver button */
   .volver-btn {
     margin-top: 18px;
     padding: 10px 14px;
@@ -926,9 +1109,14 @@
     background: #00bcd4;
     color: #fff;
     cursor: pointer;
+    transition: all 0.2s ease;
   }
 
-  /* small adjustments */
+  .volver-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 188, 212, 0.3);
+  }
+
   .toggle-btn {
     background: none;
     border: none;
@@ -967,7 +1155,6 @@
     }
   }
 
-  /* Nuevo estilo para el editor de profesor */
   .header {
     display: flex;
     align-items: center;
