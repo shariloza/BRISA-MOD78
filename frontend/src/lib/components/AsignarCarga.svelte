@@ -26,14 +26,16 @@
 
   export let profesor: any = null;
   export let mostrar: boolean = false;
+  export let asignaciones: Asignacion[] = [];
+  export let autoSave: boolean = false; // si en algún momento se desea auto-save (por defecto false)
 
   const dispatch = createEventDispatcher<{
     guardar: void;
+    guardarTemporal: { bloques: BloqueHorario[]; eliminar: BloqueHorario[] };
     cerrar: void;
   }>();
 
   // Estados
-  let asignaciones: Asignacion[] = [];
   let bloquesHorarios: BloqueHorario[] = [];
   let bloquesEditando: BloqueHorario[] = [];
   let cargando = false;
@@ -42,10 +44,11 @@
   let gestionActual = "2025";
 
   // Nuevo bloque temporal
-  let nuevoBloque: Partial<BloqueHorario> = {
+  let nuevoBloque: Partial<BloqueHorario> & { asignacionId?: string } = {
+    asignacionId: "",
     dia_semana: "lunes",
     hora_inicio: "08:00",
-    hora_fin: "10:00",
+    hora_fin: "09:00",
     gestion: gestionActual,
     observaciones: ""
   };
@@ -54,39 +57,33 @@
   const diasSemana = [
     { value: "lunes", label: "Lunes" },
     { value: "martes", label: "Martes" },
-    { value: "miercoles", label: "Martes" },
+    { value: "miercoles", label: "Miércoles" },
     { value: "jueves", label: "Jueves" },
     { value: "viernes", label: "Viernes" },
   ];
 
   const horasDisponibles = [
-    "07:00", "08:00", "09:00", "10:00", "11:00", "12:00",
-    "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"
+    "07:00", "07:30", "08:00", "08:30", "09:00", "09:30", 
+    "10:00", "10:30", "11:00", "11:30", "12:00", "12:30",
+    "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", 
+    "17:00", "17:30", "18:00", "18:30", "19:00", "19:30"
   ];
 
-  // Cargar datos del profesor
-  async function cargarDatos() {
+  // Cargar bloques horarios existentes
+  async function cargarBloquesHorarios() {
     if (!profesor?.id_persona) return;
 
     cargando = true;
     errorMessage = "";
 
     try {
-      // Cargar asignaciones del profesor
-      const resAsignaciones = await fetch(`${API_URL}/${profesor.id_persona}/asignaciones`);
-      if (resAsignaciones.ok) {
-        const data = await resAsignaciones.json();
-        asignaciones = Array.isArray(data) ? data : [];
-      }
-
-      // Cargar bloques horarios existentes
       const resBloques = await fetch(`${API_URL}/${profesor.id_persona}/bloques?gestion=${gestionActual}`);
       if (resBloques.ok) {
         const data = await resBloques.json();
         bloquesHorarios = Array.isArray(data) ? data.map((b: any) => ({
           ...b,
           hora_inicio: b.hora_inicio?.substring(0, 5) || "08:00",
-          hora_fin: b.hora_fin?.substring(0, 5) || "10:00"
+          hora_fin: b.hora_fin?.substring(0, 5) || "09:00"
         })) : [];
       }
 
@@ -94,29 +91,62 @@
       bloquesEditando = [...bloquesHorarios];
 
     } catch (err: any) {
-      errorMessage = `Error al cargar datos: ${err.message}`;
+      errorMessage = `Error al cargar bloques horarios: ${err.message}`;
     } finally {
       cargando = false;
+    }
+  }
+
+  // Manejar selección de materia y curso
+  function manejarSeleccionAsignacion(event: Event) {
+    const target = event.target as HTMLSelectElement;
+    const selectedOption = target.options[target.selectedIndex];
+    
+    if (selectedOption.value) {
+      const [idMateria, idCurso] = selectedOption.value.split('-');
+      nuevoBloque.id_materia = parseInt(idMateria);
+      nuevoBloque.id_curso = parseInt(idCurso);
+      nuevoBloque.asignacionId = selectedOption.value;
+    } else {
+      nuevoBloque.id_materia = undefined;
+      nuevoBloque.id_curso = undefined;
+      nuevoBloque.asignacionId = "";
     }
   }
 
   // Agregar nuevo bloque horario
   function agregarBloque() {
     if (!nuevoBloque.id_materia || !nuevoBloque.id_curso) {
-      errorMessage = "Seleccione una materia y curso";
+      errorMessage = "⚠️ Seleccione una materia y curso";
       return;
     }
 
     if (!nuevoBloque.hora_inicio || !nuevoBloque.hora_fin) {
-      errorMessage = "Seleccione horario de inicio y fin";
+      errorMessage = "⚠️ Seleccione horario de inicio y fin";
       return;
     }
 
     // Validar que la hora de fin sea mayor que la de inicio
-    const inicio = nuevoBloque.hora_inicio;
-    const fin = nuevoBloque.hora_fin;
-    if (fin <= inicio) {
-      errorMessage = "La hora de fin debe ser mayor que la hora de inicio";
+    if (nuevoBloque.hora_fin <= nuevoBloque.hora_inicio) {
+      errorMessage = "⚠️ La hora de fin debe ser mayor que la hora de inicio";
+      return;
+    }
+
+    // Validar que no se solape con otros bloques del mismo día
+    const bloquesMismoDia = bloquesEditando.filter(b => 
+      b.dia_semana === nuevoBloque.dia_semana
+    );
+
+    const solapado = bloquesMismoDia.some(bloque => {
+      return (
+        (nuevoBloque.hora_inicio! >= bloque.hora_inicio && nuevoBloque.hora_inicio! < bloque.hora_fin) ||
+        (nuevoBloque.hora_fin! > bloque.hora_inicio && nuevoBloque.hora_fin! <= bloque.hora_fin) ||
+        (nuevoBloque.hora_inicio! <= bloque.hora_inicio && nuevoBloque.hora_fin! >= bloque.hora_fin)
+      );
+    });
+
+    if (solapado) {
+      errorMessage = "⚠️ El horario se solapa con otro bloque del mismo día";
       return;
     }
 
@@ -125,7 +155,7 @@
     );
 
     if (!asignacion) {
-      errorMessage = "Asignación no válida";
+      errorMessage = "⚠️ Asignación no válida";
       return;
     }
 
@@ -146,9 +176,10 @@
     
     // Resetear formulario
     nuevoBloque = {
+      asignacionId: "",
       dia_semana: "lunes",
       hora_inicio: "08:00",
-      hora_fin: "10:00",
+      hora_fin: "09:00",
       gestion: gestionActual,
       observaciones: ""
     };
@@ -168,23 +199,31 @@
     );
   }
 
-  // Guardar todos los cambios
-  async function guardarCambios() {
+  // Guardado: si autoSave===false -> emitimos los cambios y NO hacemos requests (temporal).
+  async function guardarCambios(confirm: boolean = false) {
+    // Determinar bloques a eliminar (existían en DB y ya no están)
+    const bloquesAEliminar = bloquesHorarios.filter(bloqueDb =>
+      !bloquesEditando.some(bloqueEdit => bloqueEdit.id_bloque === bloqueDb.id_bloque)
+    );
+
+    // Si no está activado autoSave, emitimos los cambios al padre para persistencia posterior
+    if (!autoSave) {
+      dispatch("guardarTemporal", { bloques: bloquesEditando, eliminar: bloquesAEliminar });
+      errorMessage = "✅ Cambios de carga horaria preparados (pendientes). Presione 'Guardar Cambios' en el editor para persistirlos.";
+      return;
+    }
+
+    // Si autoSave === true, ejecutar persistencia inmediata (comportamiento original)
     guardando = true;
     errorMessage = "";
-
     try {
-      // Identificar bloques a eliminar (existen en DB pero no en edición)
-      const bloquesAEliminar = bloquesHorarios.filter(bloqueDb => 
-        !bloquesEditando.some(bloqueEdit => bloqueEdit.id_bloque === bloqueDb.id_bloque)
-      );
-
       // Eliminar bloques
       for (const bloque of bloquesAEliminar) {
         if (bloque.id_bloque) {
-          await fetch(`${API_URL}/bloques/${bloque.id_bloque}`, {
+          const res = await fetch(`${API_URL}/bloques/${bloque.id_bloque}`, {
             method: "DELETE"
           });
+          if (!res.ok) throw new Error(`Error al eliminar bloque ${bloque.id_bloque}`);
         }
       }
 
@@ -195,37 +234,34 @@
           id_curso: bloque.id_curso,
           id_materia: bloque.id_materia,
           dia_semana: bloque.dia_semana,
-          hora_inicio: bloque.hora_inicio + ":00",
-          hora_fin: bloque.hora_fin + ":00",
+          hora_inicio: `${bloque.hora_inicio}:00`,
+          hora_fin: `${bloque.hora_fin}:00`,
           gestion: bloque.gestion,
           observaciones: bloque.observaciones || null
         };
 
         if (bloque.id_bloque) {
-          // Actualizar bloque existente
-          await fetch(`${API_URL}/bloques/${bloque.id_bloque}`, {
+          const res = await fetch(`${API_URL}/bloques/${bloque.id_bloque}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(bloqueData)
           });
+          if (!res.ok) throw new Error(`Error al actualizar bloque ${bloque.id_bloque}`);
         } else {
-          // Crear nuevo bloque
-          await fetch(`${API_URL}/bloques`, {
+          const res = await fetch(`${API_URL}/bloques`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(bloqueData)
           });
+          if (!res.ok) throw new Error(`Error al crear bloque`);
         }
       }
 
       errorMessage = "✅ Carga horaria guardada exitosamente";
-      
-      // Recargar datos
       setTimeout(() => {
-        cargarDatos();
+        cargarBloquesHorarios();
         dispatch("guardar");
       }, 1500);
-
     } catch (err: any) {
       errorMessage = `❌ Error al guardar: ${err.message}`;
     } finally {
@@ -235,6 +271,16 @@
 
   // Cerrar modal
   function cerrar() {
+    // Resetear estado al cerrar
+    nuevoBloque = {
+      asignacionId: "",
+      dia_semana: "lunes",
+      hora_inicio: "08:00",
+      hora_fin: "09:00",
+      gestion: gestionActual,
+      observaciones: ""
+    };
+    errorMessage = "";
     dispatch("cerrar");
   }
 
@@ -242,7 +288,8 @@
   function calcularDuracion(horaInicio: string, horaFin: string): number {
     const [h1, m1] = horaInicio.split(':').map(Number);
     const [h2, m2] = horaFin.split(':').map(Number);
-    return (h2 - h1) + (m2 - m1) / 60;
+    const minutosTotales = (h2 * 60 + m2) - (h1 * 60 + m1);
+    return minutosTotales / 60;
   }
 
   // Calcular total de horas por día
@@ -259,7 +306,7 @@
 
   // Cargar datos cuando se abre el modal
   $: if (mostrar && profesor) {
-    cargarDatos();
+    cargarBloquesHorarios();
   }
 </script>
 
@@ -281,14 +328,14 @@
 
     <!-- ALERTAS -->
     {#if errorMessage}
-      <div class="alert {errorMessage.includes('✅') ? 'alert-success' : 'alert-error'}">
+      <div class="alert {errorMessage.includes('✅') ? 'alert-success' : errorMessage.includes('❌') ? 'alert-error' : 'alert-warning'}">
         {errorMessage}
       </div>
     {/if}
 
     {#if cargando}
       <div class="alert alert-info">
-        <span class="spinner"></span> Cargando datos...
+        <span class="spinner"></span> Cargando carga horaria...
       </div>
     {/if}
 
@@ -296,7 +343,7 @@
       
       <!-- RESUMEN DE HORAS -->
       <div class="resumen-horas">
-        <div class="resumen-item">
+        <div class="resumen-header">
           <span class="resumen-label">Total Horas Semanales:</span>
           <span class="resumen-value {totalHorasSemanales > 40 ? 'sobrecarga' : ''}">
             {totalHorasSemanales.toFixed(1)}h
@@ -319,11 +366,14 @@
         <div class="form-nuevo-bloque">
           <div class="form-row">
             <div class="form-group">
-              <label>Materia y Curso</label>
-              <select bind:value={nuevoBloque.id_materia}>
+              <label>Materia y Curso *</label>
+              <select 
+                bind:value={nuevoBloque.asignacionId}
+                on:change={manejarSeleccionAsignacion}
+              >
                 <option value="">Seleccione materia y curso</option>
                 {#each asignaciones as asignacion}
-                  <option value={asignacion.id_materia} data-curso={asignacion.id_curso}>
+                  <option value={`${asignacion.id_materia}-${asignacion.id_curso}`}>
                     {asignacion.nombre_materia} - {asignacion.nombre_curso}
                   </option>
                 {/each}
@@ -331,7 +381,7 @@
             </div>
             
             <div class="form-group">
-              <label>Día de la Semana</label>
+              <label>Día de la Semana *</label>
               <select bind:value={nuevoBloque.dia_semana}>
                 {#each diasSemana as dia}
                   <option value={dia.value}>{dia.label}</option>
@@ -342,7 +392,7 @@
 
           <div class="form-row">
             <div class="form-group">
-              <label>Hora Inicio</label>
+              <label>Hora Inicio *</label>
               <select bind:value={nuevoBloque.hora_inicio}>
                 {#each horasDisponibles as hora}
                   <option value={hora}>{hora}</option>
@@ -351,10 +401,12 @@
             </div>
             
             <div class="form-group">
-              <label>Hora Fin</label>
+              <label>Hora Fin *</label>
               <select bind:value={nuevoBloque.hora_fin}>
                 {#each horasDisponibles as hora}
-                  <option value={hora}>{hora}</option>
+                  {#if hora > nuevoBloque.hora_inicio}
+                    <option value={hora}>{hora}</option>
+                  {/if}
                 {/each}
               </select>
             </div>
@@ -377,7 +429,7 @@
           </div>
 
           <button class="btn-agregar" on:click={agregarBloque}>
-            + Agregar Bloque
+            + Agregar Bloque Horario
           </button>
         </div>
       </div>
@@ -388,7 +440,8 @@
         
         {#if bloquesEditando.length === 0}
           <div class="sin-bloques">
-            <p>No hay bloques horarios asignados</p>
+            <p>📝 No hay bloques horarios asignados</p>
+            <p class="sin-bloques-desc">Agregue bloques horarios usando el formulario superior</p>
           </div>
         {:else}
           <div class="bloques-lista">
@@ -400,49 +453,28 @@
                       {bloque.nombre_materia} - {bloque.nombre_curso}
                     </span>
                     <span class="bloque-horario">
-                      {bloque.dia_semana} {bloque.hora_inicio} - {bloque.hora_fin} 
-                      ({calcularDuracion(bloque.hora_inicio, bloque.hora_fin).toFixed(1)}h)
+                      {bloque.dia_semana} | {bloque.hora_inicio} - {bloque.hora_fin} 
+                      | <strong>{calcularDuracion(bloque.hora_inicio, bloque.hora_fin).toFixed(1)}h</strong>
                     </span>
                   </div>
                   {#if bloque.observaciones}
                     <div class="bloque-observaciones">
-                      {bloque.observaciones}
+                      📝 {bloque.observaciones}
+                    </div>
+                  {/if}
+                  {#if !bloque.id_bloque}
+                    <div class="bloque-nuevo-indicator">
+                      ✨ Nuevo (pendiente de guardar)
                     </div>
                   {/if}
                 </div>
                 
-                <div class="bloque-controles">
-                  <select 
-                    value={bloque.dia_semana}
-                    on:change={(e) => actualizarBloque(index, 'dia_semana', e.target.value)}
-                  >
-                    {#each diasSemana as dia}
-                      <option value={dia.value}>{dia.label}</option>
-                    {/each}
-                  </select>
-                  
-                  <select 
-                    value={bloque.hora_inicio}
-                    on:change={(e) => actualizarBloque(index, 'hora_inicio', e.target.value)}
-                  >
-                    {#each horasDisponibles as hora}
-                      <option value={hora}>{hora}</option>
-                    {/each}
-                  </select>
-                  
-                  <select 
-                    value={bloque.hora_fin}
-                    on:change={(e) => actualizarBloque(index, 'hora_fin', e.target.value)}
-                  >
-                    {#each horasDisponibles as hora}
-                      <option value={hora}>{hora}</option>
-                    {/each}
-                  </select>
-                  
+                <div class="bloque-actions">
                   <button 
                     class="btn-eliminar-bloque"
                     on:click={() => eliminarBloque(index)}
                     title="Eliminar bloque"
+                    disabled={guardando}
                   >
                     🗑️
                   </button>
@@ -460,8 +492,8 @@
         </button>
         <button 
           class="btn-guardar" 
-          on:click={guardarCambios}
-          disabled={guardando}
+          on:click={() => guardarCambios(true)}
+          disabled={guardando || bloquesEditando.length === 0}
         >
           {#if guardando}
             <span class="spinner"></span> Guardando...
@@ -494,7 +526,7 @@
     background: white;
     border-radius: 12px;
     width: 90%;
-    max-width: 1000px;
+    max-width: 900px;
     max-height: 90vh;
     overflow-y: auto;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
@@ -514,6 +546,7 @@
     margin: 0 0 4px 0;
     font-size: 1.25rem;
     color: #1e293b;
+    font-weight: 600;
   }
 
   .profesor-info {
@@ -530,6 +563,11 @@
     color: #64748b;
     padding: 4px;
     border-radius: 4px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .btn-cerrar:hover {
@@ -561,6 +599,12 @@
     border-color: #fca5a5;
   }
 
+  .alert-warning {
+    background: #fffbeb;
+    color: #92400e;
+    border-color: #fcd34d;
+  }
+
   .alert-info {
     background: #dbeafe;
     color: #1e40af;
@@ -573,27 +617,30 @@
   /* RESUMEN DE HORAS */
   .resumen-horas {
     background: #f8fafc;
-    padding: 16px;
+    padding: 20px;
     border-radius: 8px;
     border: 1px solid #e2e8f0;
     margin-bottom: 24px;
   }
 
-  .resumen-item {
+  .resumen-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e2e8f0;
   }
 
   .resumen-label {
     font-weight: 600;
     color: #475569;
+    font-size: 1rem;
   }
 
   .resumen-value {
     font-weight: 700;
-    font-size: 1.1rem;
+    font-size: 1.2rem;
     color: #1e293b;
   }
 
@@ -603,31 +650,36 @@
 
   .resumen-dias {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
   }
 
   .dia-horas {
     display: flex;
     justify-content: space-between;
-    font-size: 0.85rem;
-    color: #64748b;
+    font-size: 0.9rem;
+    color: #475569;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
   }
 
   /* FORMULARIO NUEVO BLOQUE */
   .nuevo-bloque-section {
-    margin-bottom: 24px;
+    margin-bottom: 32px;
   }
 
   .nuevo-bloque-section h3 {
     margin: 0 0 16px 0;
-    font-size: 1rem;
+    font-size: 1.1rem;
     color: #1e293b;
+    font-weight: 600;
   }
 
   .form-nuevo-bloque {
     background: #fafbfc;
-    padding: 20px;
+    padding: 24px;
     border-radius: 8px;
     border: 1px solid #e2e8f0;
   }
@@ -661,21 +713,31 @@
 
   select, input {
     padding: 10px 12px;
-    border: 1px solid #e2e8f0;
+    border: 1.5px solid #e2e8f0;
     border-radius: 6px;
     font-size: 0.9rem;
     background: white;
+    color: #1e293b;
+    transition: border-color 0.2s;
+  }
+
+  select:focus, input:focus {
+    outline: none;
+    border-color: #00cfe6;
+    box-shadow: 0 0 0 3px rgba(0, 207, 230, 0.1);
   }
 
   .btn-agregar {
     background: #00cfe6;
     color: white;
     border: none;
-    padding: 10px 20px;
+    padding: 12px 24px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.9rem;
-    margin-top: 8px;
+    font-weight: 500;
+    margin-top: 16px;
+    transition: background-color 0.2s;
   }
 
   .btn-agregar:hover {
@@ -685,8 +747,9 @@
   /* LISTA DE BLOQUES */
   .bloques-lista-section h3 {
     margin: 0 0 16px 0;
-    font-size: 1rem;
+    font-size: 1.1rem;
     color: #1e293b;
+    font-weight: 600;
   }
 
   .sin-bloques {
@@ -696,6 +759,12 @@
     background: #f8fafc;
     border: 1px dashed #e2e8f0;
     border-radius: 8px;
+  }
+
+  .sin-bloques-desc {
+    font-size: 0.9rem;
+    margin-top: 8px;
+    color: #94a3b8;
   }
 
   .bloques-lista {
@@ -712,11 +781,12 @@
     background: white;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
-    transition: border-color 0.2s;
+    transition: all 0.2s;
   }
 
   .bloque-item:hover {
     border-color: #cbd5e1;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   }
 
   .bloque-info {
@@ -726,13 +796,14 @@
   .bloque-principal {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
     margin-bottom: 8px;
   }
 
   .materia-curso {
     font-weight: 600;
     color: #1e293b;
+    font-size: 0.95rem;
   }
 
   .bloque-horario {
@@ -743,30 +814,44 @@
   .bloque-observaciones {
     font-size: 0.85rem;
     color: #64748b;
-    font-style: italic;
+    background: #f8fafc;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border-left: 3px solid #00cfe6;
   }
 
-  .bloque-controles {
+  .bloque-nuevo-indicator {
+    font-size: 0.8rem;
+    color: #059669;
+    background: #d1fae5;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-top: 6px;
+  }
+
+  .bloque-actions {
     display: flex;
     gap: 8px;
-    align-items: center;
-  }
-
-  .bloque-controllers select {
-    min-width: 100px;
   }
 
   .btn-eliminar-bloque {
     background: none;
     border: none;
     cursor: pointer;
-    padding: 6px;
+    padding: 8px;
     border-radius: 4px;
     color: #ef4444;
+    transition: background-color 0.2s;
   }
 
-  .btn-eliminar-bloque:hover {
+  .btn-eliminar-bloque:hover:not(:disabled) {
     background: #fef2f2;
+  }
+
+  .btn-eliminar-bloque:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* BOTONES DE ACCIÓN */
@@ -774,28 +859,30 @@
     display: flex;
     justify-content: flex-end;
     gap: 12px;
-    margin-top: 24px;
+    margin-top: 32px;
     padding-top: 20px;
     border-top: 1px solid #e2e8f0;
   }
 
   .btn-cancelar, .btn-guardar {
-    padding: 10px 20px;
+    padding: 12px 24px;
     border-radius: 6px;
     font-size: 0.9rem;
     cursor: pointer;
     border: none;
     font-weight: 500;
+    transition: all 0.2s;
   }
 
   .btn-cancelar {
     background: #f8fafc;
     color: #64748b;
-    border: 1px solid #e2e8f0;
+    border: 1.5px solid #e2e8f0;
   }
 
   .btn-cancelar:hover:not(:disabled) {
     background: #f1f5f9;
+    border-color: #cbd5e1;
   }
 
   .btn-guardar {
@@ -805,11 +892,13 @@
 
   .btn-guardar:hover:not(:disabled) {
     background: #00b8d4;
+    transform: translateY(-1px);
   }
 
-  .btn-cancelar:disabled, .btn-guardar:disabled {
-    opacity: 0.6;
+  .btn-guardar:disabled {
+    background: #cbd5e1;
     cursor: not-allowed;
+    transform: none;
   }
 
   .spinner {
@@ -836,6 +925,8 @@
 
     .modal-header {
       padding: 16px;
+      flex-direction: column;
+      gap: 12px;
     }
 
     .carga-horaria-content {
@@ -852,8 +943,8 @@
       gap: 12px;
     }
 
-    .bloque-controles {
-      justify-content: space-between;
+    .bloque-actions {
+      justify-content: flex-end;
     }
 
     .resumen-dias {
@@ -863,15 +954,19 @@
     .modal-actions {
       flex-direction: column;
     }
+
+    .btn-cancelar, .btn-guardar {
+      width: 100%;
+    }
   }
 
   @media (max-width: 480px) {
-    .bloque-controles {
-      flex-direction: column;
-    }
-
     .resumen-dias {
       grid-template-columns: 1fr;
+    }
+
+    .form-nuevo-bloque {
+      padding: 16px;
     }
   }
 </style>

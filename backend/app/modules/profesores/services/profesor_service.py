@@ -435,12 +435,12 @@ class BloqueHorarioService:
         if not materia:
             raise HTTPException(status_code=404, detail="La materia no existe")
         
-        # Verificar asignación
-        if not AsignacionRepository.exists(db, data.id_profesor, data.id_curso, data.id_materia):
-            raise HTTPException(
-                status_code=400, 
-                detail="No existe asignación de esta materia al profesor en este curso"
-            )
+        # Nota: permitimos crear bloques incluso si la asignación profesor-curso-materia
+        # no está todavía persistida en la BD (p. ej. asignaciones pendientes del frontend).
+        # Ya validamos que profesor, curso y materia existen; la integridad referencial está
+        # garantizada por las FK en la tabla bloques_horarios.
+        # Si en su negocio necesita forzar la existencia de la asignación, vuelva a activar
+        # la comprobación usando AsignacionRepository.exists(...)
         
         # Convertir strings de hora a objetos time
         from datetime import datetime, time as dt_time

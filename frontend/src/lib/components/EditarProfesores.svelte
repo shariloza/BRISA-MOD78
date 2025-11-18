@@ -2,7 +2,7 @@
   import { createEventDispatcher, onMount } from "svelte";
   import AsignarMaterias from "./AsignarMaterias.svelte";
   import AsignarCursos from "./AsignarCursos.svelte";
-  import AsignarCarga from "./AsignarCarga.svelte"
+  import AsignarCarga from "./AsignarCarga.svelte";
 
   interface Profesor {
     id_persona?: number;
@@ -59,12 +59,18 @@
   let asignacionesGuardadas: any[] = [];
   let asignacionesParaEliminar: any[] = [];
 
+  // === BLOQUES PENDIENTES (desde modal AsignarCarga) ===
+  let bloquesPendientesCrear: any[] = [];
+  let bloquesPendientesActualizar: any[] = [];
+  let bloquesPendientesEliminar: any[] = [];
+
   // === CARGOS ===
   let cargos: any[] = [];
 
   // === ESTADOS PARA MODALES DE ASIGNACIÓN ===
   let mostrarModalMaterias = false;
   let mostrarModalCursos = false;
+  let mostrarModalCarga = false;
   let materiaSeleccionada: any = null;
   let cursoSeleccionado: any = null;
 
@@ -164,6 +170,7 @@
     hayCambiosPendientes = false;
     materiaSeleccionada = null;
     cursoSeleccionado = null;
+    mostrarModalCarga = false;
   }
 
   // === VALIDACIÓN ===
@@ -253,22 +260,82 @@
         }
       }
 
-      // 4. Éxito - recargar datos
-      errorMessage = "✅ Profesor actualizado exitosamente";
-      hayCambiosPendientes = false;
+      // 4. Persistir cambios de carga horaria (bloques) preparados por el modal
+      // 4.1 Eliminar bloques marcados
+      if (bloquesPendientesEliminar.length > 0) {
+        for (const b of bloquesPendientesEliminar) {
+          if (b.id_bloque) {
+            const res = await fetch(`${API_URL}/bloques/${b.id_bloque}`, { method: "DELETE" });
+            if (!res.ok) throw new Error(`Error al eliminar bloque ${b.id_bloque}`);
+          }
+        }
+      }
       
-      // Recargar datos actualizados
-      setTimeout(() => {
-        cargarProfesor(profActualizado);
-        dispatch("save", profActualizado);
-      }, 1500);
+      // 4.2 Actualizar bloques existentes
+      if (bloquesPendientesActualizar.length > 0) {
+        for (const b of bloquesPendientesActualizar) {
+          const body = {
+            id_profesor: profActualizado.id_profesor,
+            id_curso: b.id_curso,
+            id_materia: b.id_materia,
+            dia_semana: b.dia_semana,
+            hora_inicio: (b.hora_inicio && b.hora_inicio.split(':').length === 2) ? `${b.hora_inicio}:00` : b.hora_inicio,
+            hora_fin: (b.hora_fin && b.hora_fin.split(':').length === 2) ? `${b.hora_fin}:00` : b.hora_fin,
+            gestion: b.gestion,
+            observaciones: b.observaciones || null
+          };
+          const res = await fetch(`${API_URL}/bloques/${b.id_bloque}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+          if (!res.ok) throw new Error(`Error al actualizar bloque ${b.id_bloque}`);
+        }
+      }
+      
+      // 4.3 Crear nuevos bloques
+      if (bloquesPendientesCrear.length > 0) {
+        for (const b of bloquesPendientesCrear) {
+          const body = {
+            id_profesor: profActualizado.id_profesor,
+            id_curso: b.id_curso,
+            id_materia: b.id_materia,
+            dia_semana: b.dia_semana,
+            hora_inicio: (b.hora_inicio && b.hora_inicio.split(':').length === 2) ? `${b.hora_inicio}:00` : b.hora_inicio,
+            hora_fin: (b.hora_fin && b.hora_fin.split(':').length === 2) ? `${b.hora_fin}:00` : b.hora_fin,
+            gestion: b.gestion,
+            observaciones: b.observaciones || null
+          };
+          const res = await fetch(`${API_URL}/bloques`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+          if (!res.ok) throw new Error(`Error al crear bloque para ${b.nombre_materia}`);
+        }
+      }
 
-    } catch (err: any) {
-      errorMessage = `❌ Error: ${err.message}`;
-    } finally {
-      cargando = false;
-    }
-  }
+      // Limpiar pendientes después de persistir
+      bloquesPendientesCrear = [];
+      bloquesPendientesActualizar = [];
+      bloquesPendientesEliminar = [];
+
+       // 5. Éxito - recargar datos
+       errorMessage = "✅ Profesor actualizado exitosamente";
+       hayCambiosPendientes = false;
+       
+       // Recargar datos actualizados
+       setTimeout(() => {
+         cargarProfesor(profActualizado);
+         dispatch("save", profActualizado);
+       }, 1500);
+
+     } catch (err: any) {
+       errorMessage = `❌ Error: ${err.message}`;
+     } finally {
+       cargando = false;
+     }
+   }
 
   // === FUNCIONES PARA MODALES DE ASIGNACIÓN ===
   function abrirModalMaterias() {
@@ -281,6 +348,27 @@
       return;
     }
     mostrarModalCursos = true;
+  }
+
+  function abrirModalCarga() {
+    if (!formData.id_profesor) {
+      errorMessage = "⚠️ Primero debe guardar los datos del profesor";
+      return;
+    }
+    mostrarModalCarga = true;
+  }
+
+  // Handler para cambios temporales de carga horaria (emitido por AsignarCarga)
+  function onGuardarCargaTemporal(e: CustomEvent) {
+    const { bloques, eliminar } = e.detail;
+    // separar nuevos / existentes
+    bloquesPendientesCrear = bloques.filter((b: any) => !b.id_bloque).map((b: any) => ({ ...b }));
+    bloquesPendientesActualizar = bloques.filter((b: any) => b.id_bloque).map((b: any) => ({ ...b }));
+    bloquesPendientesEliminar = eliminar || [];
+
+    hayCambiosPendientes = true;
+    mostrarModalCarga = false;
+    errorMessage = "✅ Cambios de carga horaria preparados. Presione 'Guardar Cambios' para persistirlos.";
   }
 
   function onMateriaSeleccionada(e: CustomEvent) {
@@ -736,6 +824,31 @@
         {/if}
       </section>
 
+      <!-- ASIGNAR CARGA HORARIA -->
+      <section class="carga-horaria-section">
+        <div class="carga-horaria-header">
+          <div>
+            <h3>Gestión de Carga Horaria</h3>
+            <p class="section-description">
+              Asigne horarios específicos a las materias y cursos del profesor
+            </p>
+          </div>
+          <button 
+            class="btn-carga-horaria"
+            on:click={abrirModalCarga}
+            disabled={!formData.id_profesor || cargando || eliminando}
+          >
+            📅 Asignar Carga Horaria
+          </button>
+        </div>
+
+        {#if !formData.id_profesor}
+          <div class="advertencia-carga">
+            <p>⚠️ Debe guardar los datos del profesor primero para poder asignar la carga horaria</p>
+          </div>
+        {/if}
+      </section>
+
       <!-- RESUMEN DE CAMBIOS -->
       {#if (asignacionesPendientes.length > 0 || asignacionesParaEliminar.length > 0)}
         <section class="resumen-cambios">
@@ -779,13 +892,21 @@
   on:cerrar={() => mostrarModalMaterias = false}
 />
 
-
-
 <AsignarCursos
   mostrar={mostrarModalCursos}
   cursoSeleccionado={cursoSeleccionado}
   on:cursoSeleccionado={onCursoSeleccionado}
   on:cerrar={() => mostrarModalCursos = false}
+/>
+
+
+<AsignarCarga
+  mostrar={mostrarModalCarga}
+  profesor={formData}
+  asignaciones={asignacionesGuardadas.concat(asignacionesPendientes)}
+  autoSave={false}
+  on:guardarTemporal={onGuardarCargaTemporal}
+  on:cerrar={() => mostrarModalCarga = false}
 />
 
 <style>
@@ -877,7 +998,7 @@
     border: none;
     font-weight: 500;
     transition: all 0.2s;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
   }
 
   .btn-outline {
@@ -971,6 +1092,11 @@
   .resumen-cambios {
     background: #fff7ed;
     border-color: #fdba74;
+  }
+
+  .carga-horaria-section {
+    background: #f0f9ff;
+    border-color: #bae6fd;
   }
 
   section h3 {
@@ -1198,6 +1324,52 @@
     border-radius: 6px;
   }
 
+  /* Carga horaria */
+  .carga-horaria-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .btn-carga-horaria {
+    background: #0ea5e9;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 0.2s;
+  }
+
+  .btn-carga-horaria:hover:not(:disabled) {
+    background: #0284c7;
+    
+  }
+
+  .btn-carga-horaria:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .advertencia-carga {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-top: 12px;
+  }
+
+  .advertencia-carga p {
+    margin: 0;
+    color: #92400e;
+    font-size: 0.9rem;
+  }
+
   /* Resumen de cambios */
   .cambios-lista {
     display: flex;
@@ -1285,6 +1457,15 @@
 
     .selectores-container {
       grid-template-columns: 1fr;
+    }
+
+    .carga-horaria-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .btn-carga-horaria {
+      align-self: flex-start;
     }
 
     .asignacion-item {
