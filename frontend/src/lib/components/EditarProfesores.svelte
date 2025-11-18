@@ -1,10 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from "svelte";
+  import AsignarMaterias from "./AsignarMaterias.svelte";
   import AsignarCursos from "./AsignarCursos.svelte";
+  import AsignarCarga from "./AsignarCarga.svelte"
 
   interface Profesor {
-    id?: number;
     id_persona?: number;
+    id_profesor?: number;
     ci: string;
     nombres: string;
     apellido_paterno: string;
@@ -14,185 +16,183 @@
     correo: string;
     tipo_persona?: string;
     estado_laboral?: string;
-    materias?: string[];
-    cursos?: string[];
+    especialidad?: string;
+    titulo_academico?: string;
+    nivel_enseñanza?: string;
+    observaciones_profesor?: string;
+    asignaciones?: any[];
   }
 
-  export let profesor: any = null;
+  export let profesor: Profesor | null = null;
 
   const API_URL = "http://localhost:8000/api/profesores";
-  const API_MATERIAS_URL = "http://localhost:8000/api/profesores/materias";
-  const API_CURSOS_URL = "http://localhost:8000/api/profesores/cursos";
-
   const dispatch = createEventDispatcher<{
     save: any;
     cancel: void;
     delete: { id: number };
   }>();
 
+  // === ESTADOS ===
   let formData = {
-    ci: "",
-    nombres: "",
-    apellido_paterno: "",
-    apellido_materno: "",
-    direccion: "",
-    telefono: "",
-    correo: "",
-    tipo_persona: "profesor",
-    estado_laboral: "activo",
-    id: null as number | null,
+    ci: "", nombres: "", apellido_paterno: "", apellido_materno: "", 
+    direccion: "", telefono: "", correo: "",
+    tipo_persona: "profesor", estado_laboral: "activo",
+    id_persona: null as number | null, id_profesor: null as number | null,
+    especialidad: "", titulo_academico: "", nivel_enseñanza: "todos", 
+    observaciones_profesor: "",
+    id_cargo: null as number | null
   };
 
-  let formErrors = {
-    ci: false,
-    nombres: false,
-    apellido_paterno: false,
-    correo: false,
+  let formErrors = { 
+    ci: false, nombres: false, apellido_paterno: false, correo: false,
+    especialidad: false, titulo_academico: false 
   };
-
-  let asignacionesGuardadas: any[] = [];
-  let asignacionesParaEliminar: any[] = [];
+  
   let cargando = false;
   let eliminando = false;
   let errorMessage = "";
   let cargandoDatos = false;
-  let materias: any[] = [];
-  let cursos: any[] = [];
-  let todasAsignaciones: any[] = [];
   let hayCambiosPendientes = false;
 
-  async function cargarDatosAuxiliares() {
-    try {
-      const [resMat, resCur, resAsig] = await Promise.all([
-        fetch(API_MATERIAS_URL),
-        fetch(API_CURSOS_URL),
-        fetch(`${API_URL}/asignaciones`),
-      ]);
+  // === ASIGNACIONES ===
+  let asignacionesPendientes: any[] = [];
+  let asignacionesGuardadas: any[] = [];
+  let asignacionesParaEliminar: any[] = [];
 
-      if (resMat.ok) materias = await resMat.json();
-      if (resCur.ok) cursos = await resCur.json();
-      if (resAsig.ok) todasAsignaciones = await resAsig.json();
+  // === CARGOS ===
+  let cargos: any[] = [];
+
+  // === ESTADOS PARA MODALES DE ASIGNACIÓN ===
+  let mostrarModalMaterias = false;
+  let mostrarModalCursos = false;
+  let materiaSeleccionada: any = null;
+  let cursoSeleccionado: any = null;
+
+  // === CARGAR DATOS ===
+  async function cargarCargos() {
+    try {
+      const res = await fetch(`${API_URL}/cargos`);
+      if (res.ok) cargos = await res.json();
     } catch (err) {
-      console.warn("Error cargando datos auxiliares", err);
+      console.error("Error cargando cargos:", err);
     }
   }
 
-  async function cargarProfesor(p: any) {
+  async function cargarProfesor(p: Profesor) {
+    if (!p?.id_persona) {
+      resetForm();
+      return;
+    }
+
     cargandoDatos = true;
     errorMessage = "";
 
     try {
-      if (!p) {
-        formData = {
-          ci: "",
-          nombres: "",
-          apellido_paterno: "",
-          apellido_materno: "",
-          direccion: "",
-          telefono: "",
-          correo: "",
-          tipo_persona: "profesor",
-          estado_laboral: "activo",
-          id: null,
-        };
-        asignacionesGuardadas = [];
-        asignacionesParaEliminar = [];
-        hayCambiosPendientes = false;
-        return;
-      }
-
-      const id = p.id ?? p.id_persona ?? null;
-      if (!id) {
-        formData = { ...formData, ...p, id: null };
-        asignacionesGuardadas = [];
-        asignacionesParaEliminar = [];
-        hayCambiosPendientes = false;
-        return;
-      }
-
-      const resProf = await fetch(`${API_URL}/${id}?completo=false`);
-      if (!resProf.ok) throw new Error("No se pudo cargar el profesor");
-
-      const dataProf = await resProf.json();
+      // Cargar datos básicos del profesor
+      const res = await fetch(`${API_URL}/${p.id_persona}`);
+      if (!res.ok) throw new Error("No se pudo cargar el profesor");
+      const data = await res.json();
 
       formData = {
-        ci: dataProf.ci ?? "",
-        nombres: dataProf.nombres ?? "",
-        apellido_paterno: dataProf.apellido_paterno ?? "",
-        apellido_materno: dataProf.apellido_materno ?? "",
-        direccion: dataProf.direccion ?? "",
-        telefono: dataProf.telefono ?? "",
-        correo: dataProf.correo ?? "",
-        tipo_persona: dataProf.tipo_persona ?? "profesor",
-        estado_laboral: dataProf.estado_laboral ?? "activo",
-        id: dataProf.id ?? dataProf.id_persona ?? id,
+        ci: data.ci || "",
+        nombres: data.nombres || "",
+        apellido_paterno: data.apellido_paterno || "",
+        apellido_materno: data.apellido_materno || "",
+        direccion: data.direccion || "",
+        telefono: data.telefono || "",
+        correo: data.correo || "",
+        tipo_persona: data.tipo_persona || "profesor",
+        estado_laboral: data.estado_laboral || "activo",
+        id_persona: data.id_persona,
+        id_profesor: data.id_profesor,
+        especialidad: data.especialidad || "",
+        titulo_academico: data.titulo_academico || "",
+        nivel_enseñanza: data.nivel_enseñanza || "todos",
+        observaciones_profesor: data.observaciones_profesor || "",
+        id_cargo: data.id_cargo || null
       };
 
-      const asignacionesDelProfesor = todasAsignaciones.filter(
-        (a) => a.id_profesor === id,
-      );
+      // Cargar asignaciones
+      await cargarAsignaciones(data.id_persona);
 
-      asignacionesGuardadas = asignacionesDelProfesor.map((asig) => {
-        const materia = materias.find((m) => m.id_materia === asig.id_materia);
-        const curso = cursos.find((c) => c.id_curso === asig.id_curso);
-
-        return {
-          existeEnBD: true,
-          id_materia: asig.id_materia,
-          id_curso: asig.id_curso,
-          nombre_materia:
-            materia?.nombre_materia ?? `Materia ${asig.id_materia}`,
-          nombre_curso: curso?.nombre_curso ?? `Curso ${asig.id_curso}`,
-        };
-      });
-
-      asignacionesParaEliminar = [];
       hayCambiosPendientes = false;
     } catch (err: any) {
       errorMessage = `Error: ${err.message}`;
-      console.error(err);
     } finally {
       cargandoDatos = false;
     }
   }
 
-  $: if (profesor !== undefined && profesor !== null) {
-    cargarProfesor(profesor);
+  async function cargarAsignaciones(idPersona: number) {
+    try {
+      const res = await fetch(`${API_URL}/${idPersona}/asignaciones`);
+      if (res.ok) {
+        const data = await res.json();
+        asignacionesGuardadas = Array.isArray(data) ? data.map((a: any) => ({
+          id_materia: a.id_materia,
+          id_curso: a.id_curso,
+          nombre_materia: a.nombre_materia,
+          nombre_curso: a.nombre_curso,
+          existeEnBD: true
+        })) : [];
+      } else {
+        console.error("Error cargando asignaciones:", res.status);
+      }
+    } catch (err) {
+      console.error("Error cargando asignaciones:", err);
+    }
   }
 
+  function resetForm() {
+    formData = { 
+      ci: "", nombres: "", apellido_paterno: "", apellido_materno: "", 
+      direccion: "", telefono: "", correo: "",
+      tipo_persona: "profesor", estado_laboral: "activo", 
+      id_persona: null, id_profesor: null,
+      especialidad: "", titulo_academico: "", nivel_enseñanza: "todos", 
+      observaciones_profesor: "",
+      id_cargo: null
+    };
+    asignacionesPendientes = [];
+    asignacionesGuardadas = [];
+    asignacionesParaEliminar = [];
+    formErrors = { 
+      ci: false, nombres: false, apellido_paterno: false, correo: false,
+      especialidad: false, titulo_academico: false 
+    };
+    errorMessage = "";
+    hayCambiosPendientes = false;
+    materiaSeleccionada = null;
+    cursoSeleccionado = null;
+  }
+
+  // === VALIDACIÓN ===
   function validarForm() {
-    let isValid = true;
-    formErrors = {
-      ci: false,
-      nombres: false,
-      apellido_paterno: false,
-      correo: false,
+    let ok = true;
+    formErrors = { 
+      ci: false, nombres: false, apellido_paterno: false, correo: false,
+      especialidad: false, titulo_academico: false 
     };
 
-    if (!formData.ci) {
-      formErrors.ci = true;
-      isValid = false;
-    }
-    if (!formData.nombres) {
-      formErrors.nombres = true;
-      isValid = false;
-    }
-    if (!formData.apellido_paterno) {
-      formErrors.apellido_paterno = true;
-      isValid = false;
-    }
-    if (!formData.correo || !formData.correo.includes("@")) {
-      formErrors.correo = true;
-      isValid = false;
-    }
+    if (!formData.ci?.trim()) { formErrors.ci = true; ok = false; }
+    if (!formData.nombres?.trim()) { formErrors.nombres = true; ok = false; }
+    if (!formData.apellido_paterno?.trim()) { formErrors.apellido_paterno = true; ok = false; }
+    if (!formData.correo?.includes("@")) { formErrors.correo = true; ok = false; }
+    if (!formData.especialidad?.trim()) { formErrors.especialidad = true; ok = false; }
+    if (!formData.titulo_academico?.trim()) { formErrors.titulo_academico = true; ok = false; }
 
-    return isValid;
+    return ok;
   }
 
+  // === GUARDAR CAMBIOS ===
   async function guardarCambios() {
     if (!validarForm()) {
-      errorMessage =
-        "Por favor complete todos los campos requeridos correctamente";
+      errorMessage = "Complete todos los campos requeridos (*)";
+      return;
+    }
+
+    if (!formData.id_persona) {
+      errorMessage = "ID de profesor no válido";
       return;
     }
 
@@ -200,537 +200,690 @@
     errorMessage = "";
 
     try {
-      const method = "PUT";
-      const url = `${API_URL}/${formData.id}`;
-
-      const resProf = await fetch(url, {
-        method,
+      // 1. Actualizar datos del profesor
+      const resProf = await fetch(`${API_URL}/${formData.id_persona}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ci: formData.ci,
+          nombres: formData.nombres,
+          apellido_paterno: formData.apellido_paterno,
+          apellido_materno: formData.apellido_materno || null,
+          direccion: formData.direccion || null,
+          telefono: formData.telefono || null,
+          correo: formData.correo,
+          estado_laboral: formData.estado_laboral,
+          especialidad: formData.especialidad,
+          titulo_academico: formData.titulo_academico,
+          nivel_enseñanza: formData.nivel_enseñanza,
+          observaciones_profesor: formData.observaciones_profesor || null,
+          id_cargo: formData.id_cargo
+        })
       });
 
-      if (!resProf.ok) throw new Error("Error al guardar profesor");
-      const profesorActualizado = await resProf.json();
+      if (!resProf.ok) {
+        const errorData = await resProf.json();
+        throw new Error(errorData.detail || "Error al actualizar los datos del profesor");
+      }
+      const profActualizado = await resProf.json();
 
-      // Eliminar asignaciones marcadas
+      // 2. Eliminar asignaciones marcadas
       if (asignacionesParaEliminar.length > 0) {
-        const promesasEliminar = asignacionesParaEliminar.map((asig) => {
-          const url = new URL(`${API_URL}/asignaciones`);
-          url.searchParams.append("id_profesor", String(formData.id));
-          url.searchParams.append("id_curso", String(asig.id_curso));
-          url.searchParams.append("id_materia", String(asig.id_materia));
-          return fetch(url, { method: "DELETE" });
-        });
-
-        const resultadosEliminar = await Promise.all(promesasEliminar);
-        for (const r of resultadosEliminar) {
-          if (!r.ok) {
-            const err = await r.json().catch(() => null);
-            throw new Error(err?.detail || "Error al eliminar una asignación");
-          }
+        for (const asignacion of asignacionesParaEliminar) {
+          const res = await fetch(`${API_URL}/asignaciones?id_profesor=${profActualizado.id_profesor}&id_curso=${asignacion.id_curso}&id_materia=${asignacion.id_materia}`, {
+            method: "DELETE"
+          });
+          if (!res.ok) throw new Error(`Error al eliminar asignación: ${asignacion.nombre_materia}`);
         }
       }
 
-      // Guardar solo las asignaciones NUEVAS
-      const nuevas = asignacionesGuardadas.filter((a) => !a.existeEnBD);
-      if (nuevas.length > 0) {
-        const promesas = nuevas.map((asig) =>
-          fetch(`${API_URL}/asignaciones`, {
+      // 3. Agregar nuevas asignaciones
+      if (asignacionesPendientes.length > 0) {
+        for (const asignacion of asignacionesPendientes) {
+          const res = await fetch(`${API_URL}/asignaciones`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              id_profesor: formData.id,
-              id_curso: Number(asig.id_curso),
-              id_materia: Number(asig.id_materia),
-            }),
-          }),
-        );
-        const resultados = await Promise.all(promesas);
-        for (const r of resultados) {
-          if (!r.ok) {
-            const err = await r.json().catch(() => null);
-            throw new Error(err?.detail || "Error al guardar una asignación");
-          }
+              id_profesor: profActualizado.id_profesor,
+              id_materia: asignacion.id_materia,
+              id_curso: asignacion.id_curso
+            })
+          });
+          if (!res.ok) throw new Error(`Error al crear asignación: ${asignacion.nombre_materia}`);
         }
       }
 
-      const materiasUI = [
-        ...new Set(
-          asignacionesGuardadas
-            .map((a) => (a.nombre_materia || "").toString())
-            .filter(Boolean),
-        ),
-      ];
-      const cursosUI = [
-        ...new Set(
-          asignacionesGuardadas
-            .map((a) => (a.nombre_curso || "").toString())
-            .filter(Boolean),
-        ),
-      ];
-
-      const profesorParaUI = {
-        ...profesorActualizado,
-        id:
-          profesorActualizado.id ??
-          profesorActualizado.id_persona ??
-          formData.id,
-        nombres: profesorActualizado.nombres || formData.nombres,
-        materias: materiasUI,
-        cursos: cursosUI,
-        estado_laboral:
-          profesorActualizado.estado_laboral || formData.estado_laboral,
-      };
-
-      asignacionesParaEliminar = [];
+      // 4. Éxito - recargar datos
+      errorMessage = "✅ Profesor actualizado exitosamente";
       hayCambiosPendientes = false;
-      errorMessage = "✓ Profesor actualizado exitosamente";
       
+      // Recargar datos actualizados
       setTimeout(() => {
-        dispatch("save", profesorParaUI);
+        cargarProfesor(profActualizado);
+        dispatch("save", profActualizado);
       }, 1500);
-    } catch (error: any) {
-      errorMessage = "✗ Error: " + error.message;
+
+    } catch (err: any) {
+      errorMessage = `❌ Error: ${err.message}`;
     } finally {
       cargando = false;
     }
   }
 
-  async function eliminarProfesor() {
-    if (!formData?.id) return;
-    const confirmar = confirm("¿Confirma que desea eliminar este profesor de la base de datos? Esta acción no se puede deshacer.");
-    if (!confirmar) return;
-    eliminando = true;
-    errorMessage = "";
-    try {
-      const res = await fetch(`${API_URL}/${formData.id}`, { method: "DELETE" });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.detail || `Error al eliminar (status ${res.status})`);
+  // === FUNCIONES PARA MODALES DE ASIGNACIÓN ===
+  function abrirModalMaterias() {
+    mostrarModalMaterias = true;
+  }
+
+  function abrirModalCursos() {
+    if (!materiaSeleccionada) {
+      errorMessage = "⚠️ Primero seleccione una materia";
+      return;
+    }
+    mostrarModalCursos = true;
+  }
+
+  function onMateriaSeleccionada(e: CustomEvent) {
+    materiaSeleccionada = e.detail.materia;
+    mostrarModalMaterias = false;
+    cursoSeleccionado = null;
+  }
+
+  function onCursoSeleccionado(e: CustomEvent) {
+    cursoSeleccionado = e.detail.curso;
+    mostrarModalCursos = false;
+    
+    // Agregar a la lista de asignaciones pendientes
+    if (materiaSeleccionada && cursoSeleccionado) {
+      const nuevaAsignacion = {
+        id_materia: materiaSeleccionada.id_materia,
+        id_curso: cursoSeleccionado.id_curso,
+        nombre_materia: materiaSeleccionada.nombre_materia,
+        nombre_curso: cursoSeleccionado.nombre_curso
+      };
+
+      // Verificar que no exista ya
+      const existe = asignacionesPendientes.some(a => 
+        a.id_materia === nuevaAsignacion.id_materia && 
+        a.id_curso === nuevaAsignacion.id_curso
+      ) || asignacionesGuardadas.some(a => 
+        a.id_materia === nuevaAsignacion.id_materia && 
+        a.id_curso === nuevaAsignacion.id_curso
+      );
+
+      if (!existe) {
+        asignacionesPendientes = [...asignacionesPendientes, nuevaAsignacion];
+        hayCambiosPendientes = true;
+        materiaSeleccionada = null;
+        cursoSeleccionado = null;
+      } else {
+        errorMessage = "⚠️ Esta combinación ya existe";
       }
-      errorMessage = "✓ Profesor eliminado correctamente";
-      // Notificar a quien usa el componente
-      dispatch("delete", { id: formData.id });
-      // Opcional: cerrar el formulario después de un momento
-      setTimeout(() => dispatch("cancel"), 700);
+    }
+  }
+
+  function eliminarAsignacionPendiente(index: number) {
+    asignacionesPendientes = asignacionesPendientes.filter((_, i) => i !== index);
+    hayCambiosPendientes = asignacionesPendientes.length > 0 || asignacionesParaEliminar.length > 0;
+  }
+
+  // === ASIGNACIONES EXISTENTES ===
+  function onMarcarEliminar(e: CustomEvent) {
+    const { index, asignacion } = e.detail;
+    asignacionesGuardadas = asignacionesGuardadas.filter((_, i) => i !== index);
+    asignacionesParaEliminar = [...asignacionesParaEliminar, asignacion];
+    hayCambiosPendientes = true;
+  }
+
+  function onRestaurarAsignacion(e: CustomEvent) {
+    const { index } = e.detail;
+    const asig = asignacionesParaEliminar[index];
+    asignacionesGuardadas = [...asignacionesGuardadas, asig];
+    asignacionesParaEliminar = asignacionesParaEliminar.filter((_, i) => i !== index);
+    hayCambiosPendientes = asignacionesPendientes.length > 0 || asignacionesParaEliminar.length > 0;
+  }
+
+  // === ELIMINAR PROFESOR ===
+  async function eliminarProfesor() {
+    if (!formData.id_persona) return;
+    
+    if (!confirm("¿Está seguro de eliminar este profesor? Esta acción no se puede deshacer.")) {
+      return;
+    }
+
+    eliminando = true;
+    try {
+      const res = await fetch(`${API_URL}/${formData.id_persona}`, { 
+        method: "DELETE" 
+      });
+      
+      if (!res.ok) throw new Error("Error al eliminar el profesor");
+      
+      dispatch("delete", { id: formData.id_persona });
+      errorMessage = "✅ Profesor eliminado exitosamente";
+      
     } catch (err: any) {
-      errorMessage = "✗ Error al eliminar: " + (err?.message || err);
-      console.error(err);
+      errorMessage = `❌ Error: ${err.message}`;
     } finally {
       eliminando = false;
     }
   }
 
+  // === CANCELAR ===
   function cancelar() {
     if (hayCambiosPendientes) {
-      const confirmar = confirm(
-        "Hay cambios sin guardar. ¿Está seguro que desea cancelar?",
-      );
-      if (!confirmar) return;
+      if (!confirm("Tiene cambios pendientes. ¿Está seguro de cancelar?")) {
+        return;
+      }
     }
-
-    formData = {
-      ci: "",
-      nombres: "",
-      apellido_paterno: "",
-      apellido_materno: "",
-      direccion: "",
-      telefono: "",
-      correo: "",
-      tipo_persona: "profesor",
-      estado_laboral: "activo",
-      id: null,
-    };
-    asignacionesGuardadas = [];
-    asignacionesParaEliminar = [];
-    formErrors = {
-      ci: false,
-      nombres: false,
-      apellido_paterno: false,
-      correo: false,
-    };
-    errorMessage = "";
-    hayCambiosPendientes = false;
     dispatch("cancel");
   }
 
-  function onAsignado(e: CustomEvent) {
-    const nuevaAsignacion = {
-      existeEnBD: false,
-      id_materia: e.detail.id_materia,
-      id_curso: e.detail.id_curso,
-      nombre_materia: e.detail.nombre_materia || e.detail.materia,
-      nombre_curso: e.detail.nombre_curso || e.detail.curso,
-    };
-    const exists = asignacionesGuardadas.some(
-      (a) =>
-        a.id_materia == nuevaAsignacion.id_materia &&
-        a.id_curso == nuevaAsignacion.id_curso,
-    );
-    if (!exists) {
-      asignacionesGuardadas = [...asignacionesGuardadas, nuevaAsignacion];
-      hayCambiosPendientes = true;
-    }
-  }
-
-  function marcarParaEliminar(index: number) {
-    const asig = asignacionesGuardadas[index];
-    if (!asig) return;
-
-    // Si existe en BD, agregar a lista de eliminación
-    if (asig.existeEnBD) {
-      asignacionesParaEliminar = [...asignacionesParaEliminar, asig];
-    }
-
-    // Eliminar de la lista local
-    asignacionesGuardadas = asignacionesGuardadas.filter((_, i) => i !== index);
+  // === DETECTAR CAMBIOS EN FORMULARIO ===
+  function onInputChange() {
     hayCambiosPendientes = true;
   }
 
-  function restaurarAsignacion(index: number) {
-    const asig = asignacionesParaEliminar[index];
-    if (!asig) return;
-
-    // Restaurar a la lista de asignaciones
-    asignacionesGuardadas = [...asignacionesGuardadas, asig];
-    
-    // Quitar de la lista de eliminación
-    asignacionesParaEliminar = asignacionesParaEliminar.filter(
-      (_, i) => i !== index,
-    );
-    
-    hayCambiosPendientes = asignacionesParaEliminar.length > 0 || 
-      asignacionesGuardadas.some(a => !a.existeEnBD);
-  }
-
-  onMount(async () => {
-    await cargarDatosAuxiliares();
+  onMount(() => {
+    cargarCargos();
     if (profesor) {
       cargarProfesor(profesor);
     }
   });
+
+  $: if (profesor && profesor.id_persona !== formData.id_persona) {
+    cargarProfesor(profesor);
+  }
 </script>
 
-<div class="editar-profesor">
-  <div class="header">
-    <div class="icon-title">
-      <div class="icon">✏️</div>
-      <div>
+<div class="editar-profesor-container">
+  <div class="editar-profesor">
+    <!-- HEADER CON BOTÓN ELIMINAR -->
+    <div class="header">
+      <div class="header-title">
         <h2>Editar Profesor</h2>
-        <p>Actualice los datos y asignaciones del profesor</p>
-      </div>
-    </div>
-    <div class="actions">
-      <button
-        class="btn-outline"
-        on:click={cancelar}
-        disabled={cargando || cargandoDatos}
-      >
-        Cancelar
-      </button>
-      <button
-        class="btn-primary"
-        on:click={guardarCambios}
-        disabled={cargando || cargandoDatos}
-      >
-        {#if cargando}
-          <span class="spinner"></span>
-          Guardando...
-        {:else if cargandoDatos}
-          <span class="spinner"></span>
-          Cargando...
-        {:else}
-          💾 Guardar Cambios
+        {#if formData.id_persona}
+          <span class="profesor-id">ID: {formData.id_persona}</span>
         {/if}
-      </button>
-    </div>
-  </div>
-
-  {#if hayCambiosPendientes}
-    <div class="alert alert-warning">
-      ⚠️ Hay cambios pendientes sin guardar. Haga clic en "Guardar Cambios" para
-      aplicar los cambios.
-    </div>
-  {/if}
-
-  {#if cargandoDatos}
-    <div class="alert alert-info">
-      <span class="spinner"></span>
-      Cargando datos del profesor...
-    </div>
-  {/if}
-
-  {#if errorMessage}
-    <div
-      class="alert"
-      class:alert-success={errorMessage.includes("exitosamente")}
-      class:alert-error={!errorMessage.includes("exitosamente")}
-    >
-      {errorMessage}
-    </div>
-  {/if}
-
-  <div class="form">
-    <section>
-      <h3>📋 Información Personal</h3>
-      <div class="form-row single">
-        <div class="form-group">
-          <label class:error={formErrors.ci}>CI *</label>
-          <input
-            type="text"
-            bind:value={formData.ci}
-            placeholder="Ej: 1234567"
-            class:error={formErrors.ci}
-            disabled={cargando || cargandoDatos}
-          />
-          {#if formErrors.ci}
-            <span class="error-message">El CI es requerido</span>
+      </div>
+      <div class="actions">
+        <button class="btn-delete" on:click={eliminarProfesor} disabled={eliminando || cargando}>
+          {#if eliminando}
+            <span class="spinner"></span> Eliminando...
+          {:else}
+            🗑️ Eliminar
           {/if}
-        </div>
-        <div class="form-group">
-          <label>Estado Laboral</label>
-          <select
-            bind:value={formData.estado_laboral}
-            disabled={cargando || cargandoDatos}
-          >
-            <option value="activo">✓ Activo</option>
-            <option value="inactivo">✗ Inactivo</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class:error={formErrors.nombres}>Nombres *</label>
-          <input
-            type="text"
-            bind:value={formData.nombres}
-            placeholder="Ej: Juan Carlos"
-            class:error={formErrors.nombres}
-            disabled={cargando || cargandoDatos}
-          />
-          {#if formErrors.nombres}
-            <span class="error-message">Los nombres son requeridos</span>
+        </button>
+        <button class="btn-outline" on:click={cancelar} disabled={cargando || eliminando}>
+          Cancelar
+        </button>
+        <button class="btn-primary" on:click={guardarCambios} disabled={cargando || eliminando || !hayCambiosPendientes}>
+          {#if cargando}
+            <span class="spinner"></span> Guardando...
+          {:else}
+            Guardar Cambios
           {/if}
-        </div>
+        </button>
       </div>
+    </div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label class:error={formErrors.apellido_paterno}
-            >Apellido Paterno *</label
-          >
-          <input
-            type="text"
-            bind:value={formData.apellido_paterno}
-            placeholder="Ej: Pérez"
-            class:error={formErrors.apellido_paterno}
-            disabled={cargando || cargandoDatos}
-          />
-          {#if formErrors.apellido_paterno}
-            <span class="error-message">El apellido paterno es requerido</span>
-          {/if}
-        </div>
-        <div class="form-group">
-          <label>Apellido Materno</label>
-          <input
-            type="text"
-            bind:value={formData.apellido_materno}
-            placeholder="Ej: García"
-            disabled={cargando || cargandoDatos}
-          />
-        </div>
+    <!-- ALERTAS -->
+    {#if errorMessage}
+      <div class="alert {errorMessage.includes('✅') ? 'alert-success' : errorMessage.includes('❌') ? 'alert-error' : errorMessage.includes('⚠️') ? 'alert-warning' : 'alert-info'}">
+        {errorMessage}
       </div>
-    </section>
+    {/if}
 
-    <section>
-      <h3>📞 Información de Contacto</h3>
-      <div class="form-row">
-        <div class="form-group">
-          <label class:error={formErrors.correo}>Correo Electrónico *</label>
-          <input
-            type="email"
-            bind:value={formData.correo}
-            placeholder="profesor@escuela.edu"
-            class:error={formErrors.correo}
-            disabled={cargando || cargandoDatos}
-          />
-          {#if formErrors.correo}
-            <span class="error-message">Ingrese un correo válido</span>
-          {/if}
-        </div>
-        <div class="form-group">
-          <label>Teléfono</label>
-          <input
-            type="tel"
-            bind:value={formData.telefono}
-            placeholder="+591 789-0000"
-            disabled={cargando || cargandoDatos}
-          />
-        </div>
+    {#if cargandoDatos}
+      <div class="alert alert-info">
+        <span class="spinner"></span> Cargando datos del profesor...
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Dirección</label>
-          <input
-            type="text"
-            bind:value={formData.direccion}
-            placeholder="Av. Principal #123"
-            disabled={cargando || cargandoDatos}
-          />
+    {/if}
+
+    {#if hayCambiosPendientes && !cargandoDatos}
+      <div class="alert alert-warning">
+        ⚠️ Tiene cambios pendientes. No olvide guardar.
+      </div>
+    {/if}
+
+    <!-- FORMULARIO -->
+    <div class="form-content" on:change={onInputChange}>
+      <!-- INFORMACIÓN PERSONAL -->
+      <section>
+        <h3>Información Personal</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class:error={formErrors.ci}>Cédula de Identidad *</label>
+            <input 
+              type="text" 
+              bind:value={formData.ci} 
+              disabled={cargando || eliminando}
+              class:error={formErrors.ci}
+              placeholder="Ej: 1234567"
+            />
+          </div>
+          <div class="form-group">
+            <label>Estado Laboral</label>
+            <select bind:value={formData.estado_laboral} disabled={cargando || eliminando}>
+              <option value="activo">Activo</option>
+              <option value="inactivo">Inactivo</option>
+              <option value="licencia">Licencia</option>
+              <option value="jubilado">Jubilado</option>
+            </select>
+          </div>
         </div>
-      </div>
-    </section>
 
-    <section>
-      <h3>📚 Asignación de Materias y Cursos</h3>
-      <p class="subtitle">Gestione las materias y cursos del profesor</p>
+        <div class="form-row">
+          <div class="form-group full-width">
+            <label class:error={formErrors.nombres}>Nombres Completos *</label>
+            <input 
+              type="text" 
+              bind:value={formData.nombres} 
+              disabled={cargando || eliminando}
+              class:error={formErrors.nombres}
+              placeholder="Ej: Juan Carlos"
+            />
+          </div>
+        </div>
 
-      <div class="asignar-form">
-        <AsignarCursos
-          idProfesor={formData.id}
-          asignaciones={asignacionesGuardadas}
-          {materias}
-          on:asignado={onAsignado}
-          on:remove={(e) => marcarParaEliminar(e.detail.index)}
-        />
-      </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class:error={formErrors.apellido_paterno}>Apellido Paterno *</label>
+            <input 
+              type="text" 
+              bind:value={formData.apellido_paterno} 
+              disabled={cargando || eliminando}
+              class:error={formErrors.apellido_paterno}
+              placeholder="Ej: Pérez"
+            />
+          </div>
+          <div class="form-group">
+            <label>Apellido Materno</label>
+            <input 
+              type="text" 
+              bind:value={formData.apellido_materno} 
+              disabled={cargando || eliminando}
+              placeholder="Ej: González"
+            />
+          </div>
+        </div>
+      </section>
 
-      {#if asignacionesParaEliminar.length > 0}
-        <div class="eliminadas-section">
-          <h4>
-            🗑️ Asignaciones marcadas para eliminar ({asignacionesParaEliminar.length})
-          </h4>
-          <p class="subtitle-small">
-            Estas asignaciones se eliminarán al guardar los cambios
-          </p>
-          <div class="eliminadas-list">
-            {#each asignacionesParaEliminar as asig, index}
-              <div class="asignacion-eliminada">
+      <!-- INFORMACIÓN DE CONTACTO -->
+      <section>
+        <h3>Información de Contacto</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class:error={formErrors.correo}>Correo Electrónico *</label>
+            <input 
+              type="email" 
+              bind:value={formData.correo} 
+              disabled={cargando || eliminando}
+              class:error={formErrors.correo}
+              placeholder="Ej: profesor@colegio.edu"
+            />
+          </div>
+          <div class="form-group">
+            <label>Teléfono / Celular</label>
+            <input 
+              type="tel" 
+              bind:value={formData.telefono} 
+              disabled={cargando || eliminando}
+              placeholder="Ej: 78765432"
+            />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group full-width">
+            <label>Dirección</label>
+            <input 
+              type="text" 
+              bind:value={formData.direccion} 
+              disabled={cargando || eliminando}
+              placeholder="Ej: Av. Principal #123"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- INFORMACIÓN ACADÉMICA -->
+      <section>
+        <h3>Información Académica</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class:error={formErrors.especialidad}>Especialidad *</label>
+            <input 
+              type="text" 
+              bind:value={formData.especialidad} 
+              disabled={cargando || eliminando}
+              class:error={formErrors.especialidad}
+              placeholder="Ej: Matemáticas"
+            />
+          </div>
+          <div class="form-group">
+            <label class:error={formErrors.titulo_academico}>Título Académico *</label>
+            <input 
+              type="text" 
+              bind:value={formData.titulo_academico} 
+              disabled={cargando || eliminando}
+              class:error={formErrors.titulo_academico}
+              placeholder="Ej: Lic. en Educación"
+            />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nivel de Enseñanza</label>
+            <select bind:value={formData.nivel_enseñanza} disabled={cargando || eliminando}>
+              <option value="todos">Todos los niveles</option>
+              <option value="inicial">Educación Inicial</option>
+              <option value="primaria">Educación Primaria</option>
+              <option value="secundaria">Educación Secundaria</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Cargo</label>
+            <select bind:value={formData.id_cargo} disabled={cargando || eliminando}>
+              <option value={null}>Seleccione un cargo</option>
+              {#each cargos as cargo}
+                <option value={cargo.id_cargo}>{cargo.nombre_cargo}</option>
+              {/each}
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group full-width">
+            <label>Observaciones</label>
+            <textarea 
+              bind:value={formData.observaciones_profesor} 
+              disabled={cargando || eliminando}
+              rows="3"
+              placeholder="Observaciones adicionales..."
+            ></textarea>
+          </div>
+        </div>
+      </section>
+
+      <!-- ASIGNACIONES EXISTENTES -->
+      <section>
+        <h3>Materias y Cursos Asignados</h3>
+        <p class="section-description">
+          Asignaciones actuales del profesor. Puede eliminar asignaciones marcándolas para eliminación.
+        </p>
+        
+        {#if asignacionesGuardadas.length === 0}
+          <div class="no-asignaciones">
+            <p>📝 Este profesor no tiene asignaciones actualmente.</p>
+          </div>
+        {:else}
+          <div class="asignaciones-lista">
+            {#each asignacionesGuardadas as asignacion, index}
+              <div class="asignacion-item">
                 <div class="asignacion-info">
-                  <span class="materia-badge">{asig.nombre_materia}</span>
-                  <span class="curso-badge">{asig.nombre_curso}</span>
+                  <span class="materia-nombre">{asignacion.nombre_materia}</span>
+                  <span class="separator">-</span>
+                  <span class="curso-nombre">{asignacion.nombre_curso}</span>
                 </div>
-                <button
-                  class="btn-restaurar"
-                  on:click={() => restaurarAsignacion(index)}
-                  title="Restaurar asignación"
+                <button 
+                  class="btn-eliminar-asignacion"
+                  on:click={() => onMarcarEliminar({ detail: { index, asignacion } })}
+                  disabled={cargando || eliminando}
+                  title="Eliminar asignación"
                 >
-                  ↺ Restaurar
+                  🗑️
                 </button>
               </div>
             {/each}
           </div>
-        </div>
-      {/if}
-    </section>
-  </div>
-
-  <!-- Botón para eliminar profesor al final de la pantalla -->
-  {#if formData?.id}
-    <div class="footer-delete" style="margin-top:18px;">
-      <button
-        class="btn-delete"
-        on:click={eliminarProfesor}
-        disabled={cargando || cargandoDatos || eliminando}
-        title="Eliminar profesor"
-      >
-        {#if eliminando}
-          <span class="spinner"></span> Eliminando...
-        {:else}
-          🗑️ Eliminar Profesor
         {/if}
-      </button>
+      </section>
+
+      <!-- ASIGNACIONES MARCADAS PARA ELIMINAR -->
+      {#if asignacionesParaEliminar.length > 0}
+        <section class="asignaciones-eliminar">
+          <h3>Asignaciones Marcadas para Eliminar</h3>
+          <p class="section-description">
+            Estas asignaciones se eliminarán al guardar los cambios.
+          </p>
+          <div class="asignaciones-lista eliminar">
+            {#each asignacionesParaEliminar as asignacion, index}
+              <div class="asignacion-item eliminada">
+                <div class="asignacion-info">
+                  <span class="materia-nombre">{asignacion.nombre_materia}</span>
+                  <span class="separator">-</span>
+                  <span class="curso-nombre">{asignacion.nombre_curso}</span>
+                </div>
+                <button 
+                  class="btn-restaurar-asignacion"
+                  on:click={() => onRestaurarAsignacion({ detail: { index } })}
+                  disabled={cargando || eliminando}
+                  title="Restaurar asignación"
+                >
+                  ↩️
+                </button>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      <!-- ASIGNAR NUEVAS MATERIAS Y CURSOS -->
+      <section>
+        <h3>Asignar Nuevas Materias y Cursos</h3>
+        <p class="section-description">
+          Seleccione materias y cursos para asignar al profesor
+        </p>
+        
+        <!-- Selectores tipo dropdown -->
+        <div class="selectores-container">
+          <div class="selector-group">
+            <label>Materia</label>
+            <div class="selector-input" on:click={abrirModalMaterias}>
+              {#if materiaSeleccionada}
+                <span class="seleccionado">{materiaSeleccionada.nombre_materia}</span>
+              {:else}
+                <span class="placeholder">Seleccione una materia</span>
+              {/if}
+              <span class="dropdown-arrow">▼</span>
+            </div>
+          </div>
+
+          <div class="selector-group">
+            <label>Curso</label>
+            <div 
+              class="selector-input {!materiaSeleccionada ? 'disabled' : ''}" 
+              on:click={abrirModalCursos}
+            >
+              {#if cursoSeleccionado}
+                <span class="seleccionado">{cursoSeleccionado.nombre_curso}</span>
+              {:else}
+                <span class="placeholder">Seleccione un curso</span>
+              {/if}
+              <span class="dropdown-arrow">▼</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lista de asignaciones pendientes -->
+        {#if asignacionesPendientes.length > 0}
+          <div class="asignaciones-pendientes-lista">
+            <h4>Asignaciones Pendientes ({asignacionesPendientes.length})</h4>
+            {#each asignacionesPendientes as asignacion, index}
+              <div class="asignacion-item pendiente">
+                <div class="asignacion-info">
+                  <span class="materia-nombre">{asignacion.nombre_materia}</span>
+                  <span class="separator">-</span>
+                  <span class="curso-nombre">{asignacion.nombre_curso}</span>
+                </div>
+                <button 
+                  class="btn-eliminar-pendiente"
+                  on:click={() => eliminarAsignacionPendiente(index)}
+                  disabled={cargando || eliminando}
+                  title="Eliminar asignación pendiente"
+                >
+                  ×
+                </button>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="sin-asignaciones-pendientes">
+            No hay asignaciones pendientes
+          </div>
+        {/if}
+      </section>
+
+      <!-- RESUMEN DE CAMBIOS -->
+      {#if (asignacionesPendientes.length > 0 || asignacionesParaEliminar.length > 0)}
+        <section class="resumen-cambios">
+          <h3>Resumen de Cambios</h3>
+          <div class="cambios-lista">
+            {#if asignacionesPendientes.length > 0}
+              <div class="cambio-grupo">
+                <h4>Nuevas Asignaciones ({asignacionesPendientes.length})</h4>
+                {#each asignacionesPendientes as asignacion}
+                  <div class="cambio-item nueva">
+                    <span class="icon">➕</span>
+                    <span>{asignacion.nombre_materia} - {asignacion.nombre_curso}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+
+            {#if asignacionesParaEliminar.length > 0}
+              <div class="cambio-grupo">
+                <h4>Asignaciones a Eliminar ({asignacionesParaEliminar.length})</h4>
+                {#each asignacionesParaEliminar as asignacion}
+                  <div class="cambio-item eliminar">
+                    <span class="icon">➖</span>
+                    <span>{asignacion.nombre_materia} - {asignacion.nombre_curso}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </section>
+      {/if}
     </div>
-  {/if}
+  </div>
 </div>
 
+<!-- Modales de selección -->
+<AsignarMaterias
+  mostrar={mostrarModalMaterias}
+  materiaSeleccionada={materiaSeleccionada}
+  on:materiaSeleccionada={onMateriaSeleccionada}
+  on:cerrar={() => mostrarModalMaterias = false}
+/>
+
+
+
+<AsignarCursos
+  mostrar={mostrarModalCursos}
+  cursoSeleccionado={cursoSeleccionado}
+  on:cursoSeleccionado={onCursoSeleccionado}
+  on:cerrar={() => mostrarModalCursos = false}
+/>
+
 <style>
+  .editar-profesor-container {
+    width: 100%;
+    height: 100vh;
+    overflow-y: auto;
+    background: #f8fafc;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+
   .editar-profesor {
     background: #fff;
     border-radius: 12px;
-    padding: 24px 32px;
-    width: calc(100% - 64px);
-    height: calc(100vh - 48px);
-    margin: 24px auto;
-    box-sizing: border-box;
+    padding: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    max-width: 900px;
+    margin: 0 auto;
+    min-height: fit-content;
+  }
+
+  .form-content {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    max-height: calc(100vh - 200px);
     overflow-y: auto;
-    position: relative;
+    padding-right: 8px;
+  }
+
+  /* Scroll personalizado */
+  .form-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .form-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+  }
+
+  .form-content::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+  }
+
+  .form-content::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
-    padding-bottom: 16px;
+    margin-bottom: 20px;
     border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 16px;
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
   }
 
-  .icon-title {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .icon {
-    width: 40px;
-    height: 40px;
-    background: #fef3c7;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    flex-shrink: 0;
-  }
-
-  h2 {
-    margin: 0;
-    font-size: 1.15rem;
+  .header-title h2 {
+    margin: 0 0 4px 0;
+    font-size: 1.25rem;
     color: #1e293b;
+    font-weight: 600;
   }
 
-  h2 + p {
-    margin: 2px 0 0;
-    color: #64748b;
+  .profesor-id {
     font-size: 0.85rem;
+    color: #64748b;
+    background: #f1f5f9;
+    padding: 2px 8px;
+    border-radius: 4px;
   }
 
   .actions {
     display: flex;
-    gap: 10px;
-    flex-shrink: 0;
+    gap: 12px;
+    align-items: center;
   }
 
-  .alert {
-    padding: 12px 16px;
-    border-radius: 6px;
-    margin-bottom: 16px;
+  .btn-outline, .btn-primary, .btn-delete {
+    padding: 10px 20px;
+    border-radius: 8px;
     font-size: 0.9rem;
-  }
-
-  .alert.success {
-    background: #dcfce7;
-    color: #166534;
-    border: 1px solid #86efac;
-  }
-
-  .alert.error {
-    background: #fee2e2;
-    color: #991b1b;
-    border: 1px solid #fca5a5;
+    cursor: pointer;
+    border: none;
+    font-weight: 500;
+    transition: all 0.2s;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   }
 
   .btn-outline {
-    padding: 8px 16px;
-    border: 1px solid #e2e8f0;
     background: #fff;
-    border-radius: 6px;
     color: #64748b;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 0.9rem;
+    border: 1.5px solid #e2e8f0;
   }
 
   .btn-outline:hover:not(:disabled) {
@@ -738,60 +891,108 @@
     border-color: #cbd5e1;
   }
 
-  .btn-outline:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .btn-primary {
-    padding: 8px 16px;
     background: #00cfe6;
-    border: none;
-    border-radius: 6px;
     color: #fff;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 0.9rem;
   }
 
   .btn-primary:hover:not(:disabled) {
     background: #00b8d4;
+    transform: translateY(-1px);
   }
 
   .btn-primary:disabled {
-    opacity: 0.6;
+    background: #cbd5e1;
     cursor: not-allowed;
+    transform: none;
   }
 
-  .form {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
+  .btn-delete {
+    background: #ef4444;
+    color: #fff;
+  }
+
+  .btn-delete:hover:not(:disabled) {
+    background: #dc2626;
+    transform: translateY(-1px);
+  }
+
+  .btn-outline:disabled, .btn-primary:disabled, .btn-delete:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+    border: 1px solid;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+
+  .alert-success {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #86efac;
+  }
+
+  .alert-error {
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fca5a5;
+  }
+
+  .alert-warning {
+    background: #fffbeb;
+    color: #92400e;
+    border-color: #fcd34d;
+  }
+
+  .alert-info {
+    background: #dbeafe;
+    color: #1e40af;
+    border-color: #93c5fd;
   }
 
   section {
     background: #fafbfc;
-    padding: 18px;
+    padding: 20px;
     border-radius: 8px;
     border: 1px solid #e2e8f0;
   }
 
+  .asignaciones-eliminar {
+    background: #fef2f2;
+    border-color: #fecaca;
+  }
+
+  .resumen-cambios {
+    background: #fff7ed;
+    border-color: #fdba74;
+  }
+
   section h3 {
-    margin: 0 0 16px;
-    font-size: 0.95rem;
+    margin: 0 0 12px 0;
+    font-size: 1rem;
     color: #1e293b;
     font-weight: 600;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+  }
+
+  .section-description {
+    margin: -8px 0 16px 0;
+    color: #64748b;
+    font-size: 0.9rem;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   }
 
   .form-row {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 16px;
-    margin-bottom: 12px;
-  }
-
-  .form-row.single {
     grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
   }
 
   .form-row:last-child {
@@ -803,254 +1004,307 @@
     flex-direction: column;
   }
 
+  .full-width {
+    grid-column: 1 / -1;
+  }
+
   label {
-    display: block;
     margin-bottom: 6px;
     font-size: 0.85rem;
     color: #475569;
     font-weight: 500;
-  }
-
-  input,
-  select {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    background: #fff;
-    color: #1e293b;
-    transition: border-color 0.2s;
-  }
-
-  input:disabled,
-  select:disabled {
-    background: #f1f5f9;
-    color: #94a3b8;
-    cursor: not-allowed;
-  }
-
-  input:focus,
-  select:focus {
-    outline: none;
-    border-color: #00cfe6;
-    box-shadow: 0 0 0 3px rgba(0, 207, 230, 0.1);
-  }
-
-  input::placeholder {
-    color: #94a3b8;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
   }
 
   .error {
     color: #dc2626;
   }
 
-  input.error {
+  input, select, textarea {
+    padding: 10px 12px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    background: white;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;  color: black;
+    transition: border-color 0.2s;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: #00cfe6;
+    box-shadow: 0 0 0 3px rgba(0,207,230,0.1);
+  }
+
+  input.error, select.error, textarea.error {
     border-color: #dc2626;
   }
 
-  .error-message {
-    color: #dc2626;
-    font-size: 0.8rem;
-    margin-top: 4px;
-  }
-
-  .subtitle {
-    color: #64748b;
-    font-size: 0.9rem;
-    margin: -8px 0 16px;
-  }
-
-  .asignar-form {
+  /* Selectores de materias y cursos */
+  .selectores-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
     margin-bottom: 20px;
   }
 
-  .footer-delete {
+  .selector-group {
     display: flex;
-    justify-content: center;
-    margin-bottom: 24px;
+    flex-direction: column;
   }
 
-  .btn-delete {
-    background: #ef4444;
-    color: #fff;
-    border: none;
-    padding: 10px 16px;
-    border-radius: 8px;
+  .selector-input {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: white;
     cursor: pointer;
-    font-weight: 600;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-    transition: transform 0.12s, background 0.12s;
+    transition: border-color 0.2s;
+    min-height: 42px;
   }
 
-  .btn-delete:hover:not(:disabled) {
-    background: #dc2626;
-    transform: translateY(-2px);
+  .selector-input:hover {
+    border-color: #00cfe6;
   }
 
-  .btn-delete:disabled {
-    opacity: 0.6;
+  .selector-input.disabled {
+    background: #f8fafc;
     cursor: not-allowed;
-    transform: none;
+    color: #94a3b8;
   }
 
-  @media (min-width: 640px) {
-    .form-row:not(.single) {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
-    }
+  .seleccionado {
+    font-weight: 500;
+    color: #1e293b;
+  }
+
+  .placeholder {
+    color: #94a3b8;
+  }
+
+  .dropdown-arrow {
+    color: #64748b;
+    font-size: 0.8rem;
+  }
+
+  /* Asignaciones */
+  .no-asignaciones {
+    text-align: center;
+    padding: 20px;
+    color: #64748b;
+  }
+
+  .asignaciones-lista, .asignaciones-pendientes-lista {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .asignacion-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    transition: all 0.2s;
+  }
+
+  .asignacion-item:hover {
+    border-color: #cbd5e1;
+  }
+
+  .asignacion-item.eliminada {
+    background: #fef2f2;
+    border-color: #fecaca;
+    text-decoration: line-through;
+    color: #dc2626;
+  }
+
+  .asignacion-item.pendiente {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+  }
+
+  .asignacion-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .materia-nombre {
+    font-weight: 500;
+    color: #1e293b;
+  }
+
+  .separator {
+    color: #94a3b8;
+  }
+
+  .curso-nombre {
+    color: #475569;
+  }
+
+  .btn-eliminar-asignacion, .btn-restaurar-asignacion, .btn-eliminar-pendiente {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+    font-size: 0.9rem;
+  }
+
+  .btn-eliminar-asignacion:hover:not(:disabled) {
+    background: #fef2f2;
+  }
+
+  .btn-restaurar-asignacion:hover:not(:disabled) {
+    background: #f0fdf4;
+  }
+
+  .btn-eliminar-pendiente {
+    background: #ef4444;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  .btn-eliminar-pendiente:hover:not(:disabled) {
+    background: #dc2626;
+  }
+
+  .btn-eliminar-asignacion:disabled, .btn-restaurar-asignacion:disabled, .btn-eliminar-pendiente:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .sin-asignaciones-pendientes {
+    text-align: center;
+    color: #94a3b8;
+    font-style: italic;
+    padding: 20px;
+    background: #f8fafc;
+    border: 1px dashed #e2e8f0;
+    border-radius: 6px;
+  }
+
+  /* Resumen de cambios */
+  .cambios-lista {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .cambio-grupo h4 {
+    margin: 0 0 8px 0;
+    font-size: 0.9rem;
+    color: #475569;
+    font-weight: 600;
+  }
+
+  .cambio-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 6px;
+    border-left: 4px solid;
+  }
+
+  .cambio-item.nueva {
+    border-left-color: #10b981;
+  }
+
+  .cambio-item.eliminar {
+    border-left-color: #ef4444;
+  }
+
+  .cambio-item .icon {
+    font-size: 0.8rem;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 6px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   @media (max-width: 768px) {
+    .editar-profesor-container {
+      padding: 8px;
+    }
+
     .editar-profesor {
       padding: 16px;
+      border-radius: 8px;
     }
-    .form-row,
-    .form-row.single {
-      grid-template-columns: 1fr;
-      gap: 12px;
-    }
+
     .header {
       flex-direction: column;
-      align-items: flex-start;
       gap: 12px;
+      align-items: stretch;
     }
+
     .actions {
-      width: 100%;
-      justify-content: flex-end;
+      justify-content: stretch;
+      flex-wrap: wrap;
+    }
+
+    .btn-outline, .btn-primary, .btn-delete {
+      flex: 1;
+      min-width: 120px;
+    }
+
+    .form-content {
+      max-height: calc(100vh - 240px);
+    }
+
+    .form-row {
+      grid-template-columns: 1fr;
+    }
+
+    .selectores-container {
+      grid-template-columns: 1fr;
+    }
+
+    .asignacion-item {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+
+    .asignacion-info {
+      justify-content: center;
     }
   }
 
-/* === SECCIÓN: ASIGNACIONES MARCADAS PARA ELIMINAR (ESTILO BRISA) === */
-.eliminadas-section {
-  background: #ecfdf5; /* Verde muy claro (coherente con éxito) */
-  border: 1px solid #6ee7b4; /* Borde verde cian */
-  border-radius: 8px;
-  padding: 16px;
-  margin-top: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
+  @media (max-width: 480px) {
+    .actions {
+      flex-direction: column;
+    }
 
-.eliminadas-section h4 {
-  margin: 0 0 8px;
-  font-size: 0.95rem;
-  color: #0f766e; /* Verde oscuro (como éxito) */
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.subtitle-small {
-  color: #0f766e;
-  font-size: 0.85rem;
-  margin: -4px 0 12px;
-  font-style: italic;
-}
-
-.eliminadas-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.asignacion-eliminada {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #f0fdf4; /* Verde más claro */
-  padding: 10px 12px;
-  border-radius: 6px;
-  border-left: 4px solid #10b981; /* Línea lateral verde */
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-}
-
-.asignacion-info {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex: 1;
-}
-
-.materia-badge,
-.curso-badge {
-  background: #10b981; /* Verde esmeralda */
-  color: white;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.curso-badge {
-  background: #059669; /* Verde más oscuro */
-}
-
-.btn-restaurar {
-  background: #00cfe6; /* TU COLOR PRINCIPAL */
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.2s;
-  font-weight: 500;
-}
-
-.btn-restaurar:hover {
-  background: #00b8d4;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 207, 230, 0.2);
-}
-
-.btn-restaurar:active {
-  transform: translateY(0);
-}
-
-/* Alertas coherentes con BRISA */
-.alert-warning {
-  background: #ecfdf5;
-  color: #0f766e;
-  border: 1px solid #6ee7b4;
-}
-
-.alert-info {
-  background: #dbeafe;
-  color: #1e40af;
-  border: 1px solid #93c5fd;
-}
-
-.alert-success {
-  background: #dcfce7;
-  color: #166534;
-  border: 1px solid #86efac;
-}
-
-.alert-error {
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #fca5a5;
-}
-
-/* Spinner para botones */
-.spinner {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border: 2px solid #ffffff40;
-  border-top: 2px solid #fff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin-right: 6px;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-/* Comentario  */
+    .btn-outline, .btn-primary, .btn-delete {
+      width: 100%;
+    }
+  }
 </style>

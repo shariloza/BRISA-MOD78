@@ -1,611 +1,686 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onMount } from "svelte";
+  import AsignarMaterias from "./AsignarMaterias.svelte";
   import AsignarCursos from "./AsignarCursos.svelte";
-  
+
   export let profesorInit: any = null;
 
   const API_URL = 'http://localhost:8000/api/profesores';
- 
-  const dispatch = createEventDispatcher<{
-    save: any;
-    cancel: void;
-  }>();
+  const dispatch = createEventDispatcher();
 
-  let profesor: any = {
-    ci: "",
-    nombres: "",
-    apellido_paterno: "",
-    apellido_materno: "",
-    direccion: "",
-    telefono: "",
-    correo: "",
-    tipo_persona: "profesor",
-    estado_laboral: "activo",
-    id_cargo: null
+  let profesor = {
+    ci: "", nombres: "", apellido_paterno: "", apellido_materno: "", direccion: "", telefono: "", correo: "",
+    tipo_persona: "profesor", estado_laboral: "activo", id_cargo: null, años_experiencia: 0,
+    fecha_ingreso: new Date().toISOString().split('T')[0], especialidad: "", titulo_academico: "",
+    nivel_enseñanza: "todos", observaciones_profesor: ""
   };
 
-  let formErrors = {
-    ci: false,
-    nombres: false,
-    apellido_paterno: false,
-    correo: false
-  };
-
+  let formErrors = {};
   let profesorCreado: any = null;
-  let asignacionesGuardadas: any[] = [];
+  let asignacionesPendientes: any[] = [];
   let isEditMode = false;
   let profesorId: number | null = null;
+  let cargos: any[] = [];
+  
+  // Estados para los modales de selección
+  let mostrarModalMaterias = false;
+  let mostrarModalCursos = false;
+  let materiaSeleccionada: any = null;
+  let cursoSeleccionado: any = null;
 
-  // Cargar asignaciones desde el backend
-  async function loadAsignaciones(id: number) {
+  async function cargarAuxiliares() {
     try {
-      const res = await fetch(`${API_URL}/${id}/asignaciones`);
-      if (!res.ok) {
-        console.warn('No se pudieron obtener asignaciones:', res.status);
-        return;
-      }
-      const data = await res.json();
-      asignacionesGuardadas = (Array.isArray(data) ? data : []).map((a: any) => ({
-        id_profesor: a.id_profesor,
-        id_curso: a.id_curso,
-        id_materia: a.id_materia,
-        nombre_materia: a.nombre_materia || "",
-        nombre_curso: a.nombre_curso || ""
-      }));
-    } catch (err) {
-      console.error('Error al cargar asignaciones:', err);
-    }
+      const res = await fetch(`${API_URL}/cargos`);
+      if (res.ok) cargos = await res.json();
+    } catch (err) { console.error(err); }
   }
 
-  // Manejar cambios en profesorInit (modo edición)
   $: if (profesorInit) {
-    const incomingId = profesorInit.id_persona || profesorInit.id || null;
-    
-    if (incomingId && incomingId !== profesorId) {
+    const id = profesorInit.id_persona || profesorInit.id_profesor;
+    if (id && id !== profesorId) {
       isEditMode = true;
-      profesorId = incomingId;
-      
-      profesor = {
-        ci: profesorInit.ci || "",
-        nombres: profesorInit.nombres || "",
-        apellido_paterno: profesorInit.apellido_paterno || "",
-        apellido_materno: profesorInit.apellido_materno || "",
-        direccion: profesorInit.direccion || "",
-        telefono: profesorInit.telefono || "",
-        correo: profesorInit.correo || "",
-        tipo_persona: profesorInit.tipo_persona || "profesor",
-        estado_laboral: profesorInit.estado_laboral || "activo",
-        id_cargo: profesorInit.id_cargo || null
-      };
-
-      // Cargar asignaciones del backend
-      loadAsignaciones(incomingId);
-    }
-  } else {
-    // Modo crear nuevo
-    if (isEditMode || profesorId) {
-      resetForm();
+      profesorId = id;
+      Object.assign(profesor, profesorInit);
     }
   }
 
   function resetForm() {
-    profesor = {
-      ci: "",
-      nombres: "",
-      apellido_paterno: "",
-      apellido_materno: "",
-      direccion: "",
-      telefono: "",
-      correo: "",
-      tipo_persona: "profesor",
-      estado_laboral: "activo",
-      id_cargo: null
+    profesor = { 
+      ci: "", nombres: "", apellido_paterno: "", apellido_materno: "", direccion: "", telefono: "", correo: "", 
+      tipo_persona: "profesor", estado_laboral: "activo", id_cargo: null, años_experiencia: 0, 
+      fecha_ingreso: new Date().toISOString().split('T')[0], especialidad: "", titulo_academico: "", 
+      nivel_enseñanza: "todos", observaciones_profesor: "" 
     };
-    asignacionesGuardadas = [];
-    formErrors = {
-      ci: false,
-      nombres: false,
-      apellido_paterno: false,
-      correo: false
-    };
+    asignacionesPendientes = [];
+    formErrors = {};
     isEditMode = false;
     profesorId = null;
     profesorCreado = null;
+    materiaSeleccionada = null;
+    cursoSeleccionado = null;
   }
 
-  function validarForm() {
-    let isValid = true;
-    formErrors = {
-      ci: false,
-      nombres: false,
-      apellido_paterno: false,
-      correo: false
-    };
-
-    if (!profesor.ci || profesor.ci.trim() === "") {
-      formErrors.ci = true;
-      isValid = false;
-    }
-    if (!profesor.nombres || profesor.nombres.trim() === "") {
-      formErrors.nombres = true;
-      isValid = false;
-    }
-    if (!profesor.apellido_paterno || profesor.apellido_paterno.trim() === "") {
-      formErrors.apellido_paterno = true;
-      isValid = false;
-    }
-    if (!profesor.correo || !profesor.correo.includes('@')) {
-      formErrors.correo = true;
-      isValid = false;
-    }
-
-    return isValid;
+  function validar() {
+    const e = {};
+    let ok = true;
+    if (!profesor.ci?.trim()) { e['ci'] = true; ok = false; }
+    if (!profesor.nombres?.trim()) { e['nombres'] = true; ok = false; }
+    if (!profesor.apellido_paterno?.trim()) { e['apellido_paterno'] = true; ok = false; }
+    if (!profesor.correo?.includes('@')) { e['correo'] = true; ok = false; }
+    if (!profesor.especialidad?.trim()) { e['especialidad'] = true; ok = false; }
+    if (!profesor.titulo_academico?.trim()) { e['titulo_academico'] = true; ok = false; }
+    formErrors = e;
+    return ok;
   }
 
   async function guardarTodo() {
-    if (!validarForm()) {
-      alert('Por favor complete todos los campos requeridos correctamente');
-      return;
-    }
+    if (!validar()) return alert('Complete los campos requeridos');
+
+    const data = { ...profesor, id_cargo: profesor.id_cargo ? Number(profesor.id_cargo) : null };
+    const method = isEditMode ? 'PUT' : 'POST';
+    const url = isEditMode ? `${API_URL}/${profesorId}` : API_URL;
 
     try {
-      // Preparar datos del profesor (sin campos extras)
-      const profesorData = {
-        ci: profesor.ci.trim(),
-        nombres: profesor.nombres.trim(),
-        apellido_paterno: profesor.apellido_paterno.trim(),
-        apellido_materno: profesor.apellido_materno?.trim() || null,
-        direccion: profesor.direccion?.trim() || null,
-        telefono: profesor.telefono?.trim() || null,
-        correo: profesor.correo.trim(),
-        tipo_persona: profesor.tipo_persona,
-        estado_laboral: profesor.estado_laboral,
-        id_cargo: profesor.id_cargo
-      };
-
-      // Crear o actualizar profesor
-      const method = isEditMode ? 'PUT' : 'POST';
-      const url = isEditMode ? `${API_URL}/${profesorId}` : API_URL;
-
-      const resProf = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profesorData)
+      const res = await fetch(url, { 
+        method, 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(data) 
       });
+      
+      if (!res.ok) throw new Error('Error al guardar profesor');
+      
+      profesorCreado = await res.json();
+      const idProf = profesorCreado.id_profesor;
 
-      if (!resProf.ok) {
-        const errorData = await resProf.json().catch(() => null);
-        throw new Error(errorData?.detail || `Error al ${isEditMode ? 'actualizar' : 'crear'} profesor`);
-      }
-
-      profesorCreado = await resProf.json();
-      const idProfesor = profesorCreado.id_persona || profesorCreado.id;
-
-      // Guardar solo asignaciones NUEVAS (sin los tres IDs completos)
-      const nuevas = asignacionesGuardadas.filter(a => 
-        !a.id_profesor || !a.id_curso || !a.id_materia
-      );
-
-      if (nuevas.length > 0) {
-        const promesas = nuevas.map(asig =>
+      // Guardar asignaciones pendientes
+      if (asignacionesPendientes.length > 0) {
+        await Promise.all(asignacionesPendientes.map(a => 
           fetch(`${API_URL}/asignaciones`, {
-            method: 'POST',
+            method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id_profesor: Number(idProfesor),
-              id_curso: Number(asig.id_curso),
-              id_materia: Number(asig.id_materia)
+            body: JSON.stringify({ 
+              id_profesor: idProf, 
+              id_materia: a.id_materia, 
+              id_curso: a.id_curso 
             })
           })
-        );
-
-        const resultados = await Promise.all(promesas);
-        
-        for (let i = 0; i < resultados.length; i++) {
-          const r = resultados[i];
-          if (!r.ok) {
-            const err = await r.json().catch(() => null);
-            console.error('Error al guardar asignación:', err);
-            // Continuar con las demás aunque una falle
-          }
-        }
+        ));
       }
-
-      // Construir objeto para la UI
-      const materiasUI = [...new Set(
-        asignacionesGuardadas
-          .map(a => a.nombre_materia)
-          .filter(Boolean)
-      )];
-      
-      const cursosUI = [...new Set(
-        asignacionesGuardadas
-          .map(a => a.nombre_curso)
-          .filter(Boolean)
-      )];
-
-      const profesorParaUI = {
-        ...profesorCreado,
-        materias: materiasUI,
-        cursos: cursosUI
-      };
 
       alert(`Profesor ${isEditMode ? 'actualizado' : 'creado'} exitosamente`);
-      dispatch('save', profesorParaUI);
+      dispatch('save', { 
+        ...profesorCreado, 
+        asignaciones: asignacionesPendientes 
+      });
       resetForm();
-    } catch (error: any) {
-      console.error('Error completo:', error);
-      alert('Error: ' + (error.message || 'Error desconocido'));
+      
+    } catch (err) {
+      alert('Error: ' + err.message);
     }
   }
 
-  function cancelar() {
-    resetForm();
-    dispatch("cancel");
+  // Función para abrir modal de materias
+  function abrirModalMaterias() {
+    mostrarModalMaterias = true;
   }
 
-  function onAsignado(e: CustomEvent) {
-    const nuevaAsignacion = {
-      id_materia: e.detail.id_materia,
-      id_curso: e.detail.id_curso,
-      nombre_materia: e.detail.nombre_materia || e.detail.materia || "",
-      nombre_curso: e.detail.nombre_curso || e.detail.curso || ""
-    };
-
-    // Evitar duplicados
-    const exists = asignacionesGuardadas.some(a => 
-      a.id_materia == nuevaAsignacion.id_materia && 
-      a.id_curso == nuevaAsignacion.id_curso
-    );
-    
-    if (!exists) {
-      asignacionesGuardadas = [...asignacionesGuardadas, nuevaAsignacion];
-    }
-  }
-
-  async function eliminarAsignacion(arg: any) {
-    let index = -1;
-    
-    if (typeof arg === 'number') {
-      index = arg;
-    } else if (arg && typeof arg === 'object') {
-      index = arg.index ?? -1;
-    }
-
-    if (index === -1 || index >= asignacionesGuardadas.length) {
+  // Función para abrir modal de cursos
+  function abrirModalCursos() {
+    if (!materiaSeleccionada) {
+      alert("Primero seleccione una materia");
       return;
     }
+    mostrarModalCursos = true;
+  }
 
-    const asig = asignacionesGuardadas[index];
+  // Cuando se selecciona una materia
+  function onMateriaSeleccionada(event: CustomEvent) {
+    materiaSeleccionada = event.detail.materia;
+    mostrarModalMaterias = false;
+    cursoSeleccionado = null; // Resetear curso cuando cambia la materia
+  }
+
+  // Cuando se selecciona un curso
+  function onCursoSeleccionado(event: CustomEvent) {
+    cursoSeleccionado = event.detail.curso;
+    mostrarModalCursos = false;
     
-    // Si tiene los tres IDs, es una asignación guardada en BD
-    if (asig.id_profesor && asig.id_curso && asig.id_materia) {
-      try {
-        const url = `${API_URL}/asignaciones?id_profesor=${asig.id_profesor}&id_curso=${asig.id_curso}&id_materia=${asig.id_materia}`;
-        const res = await fetch(url, { method: 'DELETE' });
-        
-        if (!res.ok) {
-          const err = await res.json().catch(() => null);
-          throw new Error(err?.detail || 'Error al eliminar asignación');
-        }
-      } catch (err: any) {
-        alert('No se pudo eliminar la asignación: ' + (err.message || err));
-        return;
+    // Agregar a la lista de asignaciones pendientes
+    if (materiaSeleccionada && cursoSeleccionado) {
+      const nuevaAsignacion = {
+        id_materia: materiaSeleccionada.id_materia,
+        id_curso: cursoSeleccionado.id_curso,
+        nombre_materia: materiaSeleccionada.nombre_materia,
+        nombre_curso: cursoSeleccionado.nombre_curso
+      };
+
+      // Verificar que no exista ya
+      const existe = asignacionesPendientes.some(a => 
+        a.id_materia === nuevaAsignacion.id_materia && 
+        a.id_curso === nuevaAsignacion.id_curso
+      );
+
+      if (!existe) {
+        asignacionesPendientes = [...asignacionesPendientes, nuevaAsignacion];
+        // Resetear selecciones
+        materiaSeleccionada = null;
+        cursoSeleccionado = null;
+      } else {
+        alert("Esta combinación ya está en la lista");
       }
     }
-
-    // Quitar de la lista local
-    asignacionesGuardadas = asignacionesGuardadas.filter((_, i) => i !== index);
   }
+
+  // Eliminar asignación pendiente
+  function eliminarAsignacion(index: number) {
+    asignacionesPendientes = asignacionesPendientes.filter((_, i) => i !== index);
+  }
+
+  onMount(cargarAuxiliares);
 </script>
 
-<div class="nuevo-profesor">
-  <div class="header">
-    <div class="icon-title">
-      <div class="icon">👤</div>
-      <div>
-        <h2>{isEditMode ? 'Editar Profesor' : 'Nuevo Profesor'}</h2>
-        <p>Complete los datos y asigne materias en un solo paso</p>
+<div class="nuevo-profesor-container">
+  <div class="nuevo-profesor">
+    <div class="header">
+      <h2>{isEditMode ? 'Editar Profesor' : 'Nuevo Profesor'}</h2>
+      <div class="actions">
+        <button class="btn-outline" on:click={() => dispatch('cancel')}>Cancelar</button>
+        <button class="btn-primary" on:click={guardarTodo}>
+          {isEditMode ? 'Actualizar' : 'Guardar'}
+        </button>
       </div>
     </div>
-    <div class="actions">
-      <button class="btn-outline" on:click={cancelar}>Cancelar</button>
-      <button class="btn-primary" on:click={guardarTodo}>
-        {isEditMode ? 'Actualizar' : 'Guardar'}
-      </button>
+
+    <div class="form-content">
+      <!-- Información Personal -->
+      <section>
+        <h3>Información Personal</h3>
+        <div class="form-row single">
+          <div class="form-group">
+            <label class:error={formErrors.ci}>CI *</label>
+            <input type="text" bind:value={profesor.ci} disabled={isEditMode} />
+          </div>
+          <div class="form-group">
+            <label>Estado Laboral</label>
+            <select bind:value={profesor.estado_laboral}>
+              <option value="activo">Activo</option>
+              <option value="inactivo">Inactivo</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class:error={formErrors.nombres}>Nombres *</label>
+            <input type="text" bind:value={profesor.nombres} />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class:error={formErrors.apellido_paterno}>Apellido Paterno *</label>
+            <input type="text" bind:value={profesor.apellido_paterno} />
+          </div>
+          <div class="form-group">
+            <label>Apellido Materno</label>
+            <input type="text" bind:value={profesor.apellido_materno} />
+          </div>
+        </div>
+      </section>
+
+      <!-- Contacto -->
+      <section>
+        <h3>Información de Contacto</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class:error={formErrors.correo}>Correo *</label>
+            <input type="email" bind:value={profesor.correo} />
+          </div>
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input type="tel" bind:value={profesor.telefono} />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Dirección</label>
+            <input type="text" bind:value={profesor.direccion} />
+          </div>
+        </div>
+      </section>
+
+      <!-- Académicos -->
+      <section>
+        <h3>Datos Académicos</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class:error={formErrors.especialidad}>Especialidad *</label>
+            <input type="text" bind:value={profesor.especialidad} />
+          </div>
+          <div class="form-group">
+            <label class:error={formErrors.titulo_academico}>Título *</label>
+            <input type="text" bind:value={profesor.titulo_academico} />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nivel</label>
+            <select bind:value={profesor.nivel_enseñanza}>
+              <option value="todos">Todos</option>
+              <option value="primary">Primaria</option>
+              <option value="secondary">Secundaria</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Años Experiencia</label>
+            <input type="number" bind:value={profesor.años_experiencia} min="0" />
+          </div>
+        </div>
+      </section>
+
+      <!-- Laborales -->
+      <section>
+        <h3>Datos Laborales</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Cargo</label>
+            <select bind:value={profesor.id_cargo}>
+              <option value={null}>Ninguno</option>
+              {#each cargos as c}
+                <option value={c.id_cargo}>{c.nombre_cargo}</option>
+              {/each}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Fecha Ingreso</label>
+            <input type="date" bind:value={profesor.fecha_ingreso} />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Observaciones</label>
+            <textarea bind:value={profesor.observaciones_profesor} rows="3"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <!-- ASIGNACIÓN DE MATERIAS Y CURSOS -->
+      <section>
+        <h3>Asignación de Materias y Cursos</h3>
+        
+        <!-- Selectores tipo dropdown -->
+        <div class="selectores-container">
+          <div class="selector-group">
+            <label>Materia</label>
+            <div class="selector-input" on:click={abrirModalMaterias}>
+              {#if materiaSeleccionada}
+                <span class="seleccionado">{materiaSeleccionada.nombre_materia}</span>
+              {:else}
+                <span class="placeholder">Seleccione una materia</span>
+              {/if}
+              <span class="dropdown-arrow">▼</span>
+            </div>
+          </div>
+
+          <div class="selector-group">
+            <label>Curso</label>
+            <div 
+              class="selector-input {!materiaSeleccionada ? 'disabled' : ''}" 
+              on:click={abrirModalCursos}
+            >
+              {#if cursoSeleccionado}
+                <span class="seleccionado">{cursoSeleccionado.nombre_curso}</span>
+              {:else}
+                <span class="placeholder">Seleccione un curso</span>
+              {/if}
+              <span class="dropdown-arrow">▼</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lista de asignaciones pendientes -->
+        {#if asignacionesPendientes.length > 0}
+          <div class="asignaciones-lista">
+            <h4>Asignaciones Pendientes ({asignacionesPendientes.length})</h4>
+            {#each asignacionesPendientes as asignacion, index}
+              <div class="asignacion-item">
+                <span class="materia">{asignacion.nombre_materia}</span>
+                <span class="separador">-</span>
+                <span class="curso">{asignacion.nombre_curso}</span>
+                <button 
+                  class="btn-eliminar" 
+                  on:click={() => eliminarAsignacion(index)}
+                >
+                  ×
+                </button>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="sin-asignaciones">
+            No hay asignaciones pendientes
+          </div>
+        {/if}
+      </section>
     </div>
-  </div>
-
-  <div class="form">
-    <!-- Información Personal -->
-    <section>
-      <h3>Información Personal</h3>
-      <div class="form-row single">
-        <div class="form-group">
-          <label class:error={formErrors.ci}>CI *</label>
-          <input 
-            type="text" 
-            bind:value={profesor.ci} 
-            placeholder="Ej: 1234567" 
-            class:error={formErrors.ci}
-            disabled={isEditMode}
-          />
-          {#if formErrors.ci}
-            <span class="error-message">El CI es requerido</span>
-          {/if}
-        </div>
-        <div class="form-group">
-          <label>Estado Laboral</label>
-          <select bind:value={profesor.estado_laboral}>
-            <option value="activo">Activo</option>
-            <option value="inactivo">Inactivo</option>
-            <option value="retirado">Retirado</option>
-            <option value="suspendido">Suspendido</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class:error={formErrors.nombres}>Nombres *</label>
-          <input 
-            type="text" 
-            bind:value={profesor.nombres} 
-            placeholder="Ej: Juan Carlos" 
-            class:error={formErrors.nombres}
-          />
-          {#if formErrors.nombres}
-            <span class="error-message">Los nombres son requeridos</span>
-          {/if}
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class:error={formErrors.apellido_paterno}>Apellido Paterno *</label>
-          <input 
-            type="text" 
-            bind:value={profesor.apellido_paterno} 
-            placeholder="Ej: Pérez" 
-            class:error={formErrors.apellido_paterno}
-          />
-          {#if formErrors.apellido_paterno}
-            <span class="error-message">El apellido paterno es requerido</span>
-          {/if}
-        </div>
-        <div class="form-group">
-          <label>Apellido Materno</label>
-          <input 
-            type="text" 
-            bind:value={profesor.apellido_materno} 
-            placeholder="Ej: García"
-          />
-        </div>
-      </div>
-    </section>
-
-    <!-- Información de Contacto -->
-    <section>
-      <h3>Información de Contacto</h3>
-      <div class="form-row">
-        <div class="form-group">
-          <label class:error={formErrors.correo}>Correo Electrónico *</label>
-          <input 
-            type="email" 
-            bind:value={profesor.correo} 
-            placeholder="profesor@escuela.edu" 
-            class:error={formErrors.correo}
-          />
-          {#if formErrors.correo}
-            <span class="error-message">Ingrese un correo válido</span>
-          {/if}
-        </div>
-        <div class="form-group">
-          <label>Teléfono</label>
-          <input 
-            type="tel" 
-            bind:value={profesor.telefono} 
-            placeholder="+591 789-0000"
-          />
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Dirección</label>
-          <input 
-            type="text" 
-            bind:value={profesor.direccion} 
-            placeholder="Av. Principal #123"
-          />
-        </div>
-      </div>
-    </section>
-
-    <!-- ASIGNACIONES -->
-    <section>
-      <h3>Asignación de Materias y Cursos</h3>
-      <p class="subtitle">Agregue todas las asignaciones antes de guardar</p>
-
-      <div class="asignar-form">
-        <AsignarCursos
-          idProfesor={profesorId}
-          asignaciones={asignacionesGuardadas}
-          on:asignado={onAsignado}
-          on:remove={(e) => eliminarAsignacion(e.detail)}
-        />
-      </div>
-    </section>
   </div>
 </div>
 
+<!-- Modales de selección -->
+<AsignarMaterias
+  mostrar={mostrarModalMaterias}
+  materiaSeleccionada={materiaSeleccionada}
+  on:materiaSeleccionada={onMateriaSeleccionada}
+  on:cerrar={() => mostrarModalMaterias = false}
+/>
+
+<AsignarCursos
+  mostrar={mostrarModalCursos}
+  cursoSeleccionado={cursoSeleccionado}
+  on:cursoSeleccionado={onCursoSeleccionado}
+  on:cerrar={() => mostrarModalCursos = false}
+/>
+
 <style>
+  /* CONTENEDOR PRINCIPAL CON SCROLL */
+  .nuevo-profesor-container {
+    width: 100%;
+    height: 100vh;
+    overflow-y: auto;
+    background: #f8fafc;
+  }
+
   .nuevo-profesor {
     background: #fff;
     border-radius: 12px;
-    padding: 24px 32px;
-    width: calc(100% - 64px);
-    height: calc(100vh - 48px);
-    margin: 24px auto;
-    box-sizing: border-box;
-    overflow-y: auto;
-    position: relative;
+    padding: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    max-width: 900px;
+    margin: 0 auto;
+    min-height: fit-content;
   }
+
+  /* CONTENEDOR DEL FORMULARIO CON SCROLL INTERNO */
+  .form-content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    padding-right: 8px;
+  }
+
+  /* Scroll personalizado */
+  .form-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .form-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+  }
+
+  .form-content::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+  }
+
+  .form-content::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
-    padding-bottom: 16px;
+    margin-bottom: 20px;
     border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 12px;
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
   }
-  .icon-title {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .icon {
-    width: 40px;
-    height: 40px;
-    background: #e6f7fa;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    flex-shrink: 0;
-  }
+
   h2 {
     margin: 0;
     font-size: 1.15rem;
     color: #1e293b;
   }
-  h2 + p {
-    margin: 2px 0 0;
-    color: #64748b;
-    font-size: 0.85rem;
-  }
+
   .actions {
     display: flex;
     gap: 10px;
-    flex-shrink: 0;
   }
-  .btn-outline {
+
+  .btn-outline, .btn-primary {
     padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
     border: 1px solid #e2e8f0;
+  }
+
+  .btn-outline {
     background: #fff;
-    border-radius: 6px;
     color: #64748b;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 0.9rem;
   }
-  .btn-outline:hover {
-    background: #f8fafc;
-    border-color: #cbd5e1;
-  }
+
   .btn-primary {
-    padding: 8px 16px;
     background: #00cfe6;
-    border: none;
-    border-radius: 6px;
     color: #fff;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 0.9rem;
+    border-color: #00cfe6;
   }
-  .btn-primary:hover {
-    background: #00b8d4;
-  }
-  .form {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
+
   section {
     background: #fafbfc;
     padding: 18px;
     border-radius: 8px;
     border: 1px solid #e2e8f0;
   }
+
   section h3 {
     margin: 0 0 16px;
     font-size: 0.95rem;
     color: #1e293b;
     font-weight: 600;
   }
+
   .form-row {
     display: grid;
-    grid-template-columns: 1fr;
     gap: 16px;
     margin-bottom: 12px;
   }
+
   .form-row.single {
     grid-template-columns: 1fr 1fr;
   }
-  .form-row:last-child {
-    margin-bottom: 0;
-  }
+
   .form-group {
     display: flex;
     flex-direction: column;
   }
+
   label {
-    display: block;
     margin-bottom: 6px;
     font-size: 0.85rem;
     color: #475569;
     font-weight: 500;
   }
-  input, select {
-    width: 100%;
+
+  input, select, textarea {
     padding: 10px 12px;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
     font-size: 0.9rem;
-    background: #fff;
-    color: #1e293b;
+    background: #aebcca;
+    color: black;
   }
-  input:disabled {
-    background: #f1f5f9;
-    color: #94a3b8;
-    cursor: not-allowed;
-  }
-  select option {
-    color: #1e293b;
-    background: #fff;
-    padding: 8px;
-  }
-  input:focus, select:focus {
+
+  input:focus, select:focus, textarea:focus {
     outline: none;
     border-color: #00cfe6;
-    box-shadow: 0 0 0 3px rgba(0, 207, 230, 0.1);
+    box-shadow: 0 0 0 3px rgba(0,207,230,0.1);
   }
-  input::placeholder {
-    color: #94a3b8;
-  }
-  select {
-    cursor: pointer;
-  }
+
   .error {
     color: #dc2626;
   }
+
   input.error {
     border-color: #dc2626;
   }
-  .error-message {
-    color: #dc2626;
-    font-size: 0.8rem;
-    margin-top: 4px;
+
+  /* Estilos para los selectores */
+  .selectores-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
   }
-  .subtitle {
+
+  .selector-group {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .selector-input {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    min-height: 42px;
+  }
+
+  .selector-input:hover {
+    border-color: #00cfe6;
+  }
+
+  .selector-input.disabled {
+    background: #f8fafc;
+    cursor: not-allowed;
+    color: #94a3b8;
+  }
+
+  .seleccionado {
+    font-weight: 500;
+    color: #1e293b;
+  }
+
+  .placeholder {
+    color: #94a3b8;
+  }
+
+  .dropdown-arrow {
     color: #64748b;
-    font-size: 0.9rem;
-    margin: -8px 0 16px;
+    font-size: 0.8rem;
   }
-  @media (min-width: 640px) {
-    .form-row:not(.single) {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
+
+  /* Estilos para la lista de asignaciones */
+  .asignaciones-lista h4 {
+    margin: 0 0 12px;
+    font-size: 0.9rem;
+    color: #475569;
+  }
+
+  .asignacion-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    margin-bottom: 8px;
+  }
+
+  .materia {
+    font-weight: 600;
+    color: #1e293b;
+  }
+
+  .separador {
+    color: #94a3b8;
+  }
+
+  .curso {
+    color: #475569;
+  }
+
+  .btn-eliminar {
+    background: #ef4444;
+    color: white;
+    border: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  .sin-asignaciones {
+    text-align: center;
+    color: #94a3b8;
+    font-style: italic;
+    padding: 20px;
+    background: #f8fafc;
+    border: 1px dashed #e2e8f0;
+    border-radius: 6px;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .nuevo-profesor-container {
+      padding: 8px;
+    }
+    
+    .nuevo-profesor {
+      padding: 16px;
+      border-radius: 8px;
+    }
+
+    .selectores-container {
+      grid-template-columns: 1fr;
+    }
+    
+    .form-row.single {
+      grid-template-columns: 1fr;
+    }
+    
+    .header {
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+    }
+    
+    .actions {
+      justify-content: stretch;
+    }
+    
+    .btn-outline, .btn-primary {
+      flex: 1;
+    }
+
+    .form-content {
+      max-height: calc(100vh - 140px);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .asignacion-item {
+      flex-wrap: wrap;
+    }
+    
+    .btn-eliminar {
+      margin-left: 0;
+      margin-top: 4px;
     }
   }
 </style>

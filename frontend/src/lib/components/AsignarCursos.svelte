@@ -1,231 +1,221 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
+  import { onMount, createEventDispatcher } from "svelte";
 
-  export let idProfesor: number | null = null;
-  export let asignaciones: any[] = []; // la lista viene del padre
-  export let materias: any[] | null = null; // si el padre pasa materias, usar esas
   const API_URL = "http://localhost:8000/api/profesores";
   const dispatch = createEventDispatcher();
 
-  let cursos = [];
-  let asignacion = { id_curso: "", id_materia: "" };
+  export let mostrar = false;
+  export let cursoSeleccionado: any = null;
 
-  async function cargarDatos() {
+  let cursos: any[] = [];
+  let cargando = false;
+  let error = "";
+
+  async function cargarCursos() {
+    cargando = true;
+    error = "";
+    
     try {
-      // cargar cursos siempre (no lo pasa el padre)
-      const resCursos = await fetch(`${API_URL}/cursos`);
-      cursos = resCursos.ok ? await resCursos.json() : [];
-
-      // materias: si el padre ya las pasó, no hacer fetch adicional
-      if (Array.isArray(materias) && materias.length > 0) {
-        // usar la prop `materias` pasada
-      } else {
-        const resMaterias = await fetch(`${API_URL}/materias`);
-        materias = resMaterias.ok ? await resMaterias.json() : [];
-      }
-    } catch (error) {
-      console.error("Error:", error);
+      const res = await fetch(`${API_URL}/cursos`);
+      if (!res.ok) throw new Error("Error al cargar cursos");
+      
+      cursos = await res.json();
+    } catch (err: any) {
+      error = err.message;
+      console.error("Error cargando cursos:", err);
+    } finally {
+      cargando = false;
     }
   }
 
-  function agregarAsignacion() {
-    if (!asignacion.id_materia || !asignacion.id_curso) return;
-    const materia = materias.find((m) => m.id_materia == asignacion.id_materia);
-    const curso = cursos.find((c) => c.id_curso == asignacion.id_curso);
-    const nuevaAsignacion = {
-      id_materia: asignacion.id_materia,
-      id_curso: asignacion.id_curso,
-      nombre_materia: materia?.nombre_materia,
-      nombre_curso: curso?.nombre_curso,
-    };
-    dispatch("asignado", nuevaAsignacion);
-    asignacion.id_curso = "";
-    asignacion.id_materia = "";
+  function seleccionarCurso(curso: any) {
+    cursoSeleccionado = curso;
+    dispatch('cursoSeleccionado', { curso });
   }
 
-  function quitarLocal(index: number, id?: any) {
-    dispatch("remove", { index, id });
+  function cerrar() {
+    dispatch('cerrar');
   }
 
-  $: cargarDatos();
+  $: if (mostrar) {
+    cargarCursos();
+  }
 </script>
 
-<div class="asignar-cursos">
-  <div class="form-grid">
-    <div class="form-group">
-      <label>Materia *</label>
-      <select bind:value={asignacion.id_materia} class="select-field">
-        <option value="">Seleccione una materia</option>
-        {#each materias as materia}
-          <option value={materia.id_materia}>{materia.nombre_materia}</option>
-        {/each}
-      </select>
+{#if mostrar}
+<div class="overlay" on:click={cerrar}>
+  <div class="modal" on:click|stopPropagation>
+    <div class="header">
+      <h2>Cursos</h2>
+      <button class="btn-cerrar" on:click={cerrar}>×</button>
     </div>
 
-    <div class="form-group">
-      <label>Curso *</label>
-      <select bind:value={asignacion.id_curso} class="select-field">
-        <option value="">Seleccione un curso</option>
-        {#each cursos as curso}
-          <option value={curso.id_curso}
-            >{curso.nombre_curso} - {curso.gestion}</option
-          >
-        {/each}
-      </select>
-    </div>
-  </div>
-
-  <div class="form-actions">
-    <button
-      class="btn-primary"
-      disabled={!asignacion.id_materia || !asignacion.id_curso}
-      on:click={agregarAsignacion}
-    >
-      Agregar Asignación
-    </button>
-  </div>
-
-  <!-- Lista de asignaciones PENDIENTES (se muestra aquí) -->
-  {#if asignaciones && asignaciones.length > 0}
-    <div class="asignaciones-list">
-      <h4>Asignaciones Pendientes</h4>
-      <div class="asignaciones-grid">
-        {#each asignaciones as asig, index (index)}
-          <div class="asignacion-card">
-            <div class="materia">
-              {asig.nombre_materia || asig.materia || "Sin nombre"}
-            </div>
-            <div class="curso">
-              {asig.nombre_curso || asig.curso || "Sin curso"}
-            </div>
-            <button
-              class="btn-remove"
-              on:click={() => quitarLocal(index, asig.id)}>✕ Quitar</button
+    <div class="content">
+      {#if cargando}
+        <div class="estado">Cargando cursos...</div>
+      {:else if error}
+        <div class="error">{error}</div>
+      {:else if cursos.length === 0}
+        <div class="estado">No hay cursos registrados</div>
+      {:else}
+        <div class="lista-cursos">
+          {#each cursos as curso}
+            <div 
+              class="curso-item {cursoSeleccionado?.id_curso === curso.id_curso ? 'seleccionado' : ''}"
+              on:click={() => seleccionarCurso(curso)}
             >
-          </div>
-        {/each}
-      </div>
+              <div class="curso-info">
+                <span class="nombre">{curso.nombre_curso}</span>
+                <div class="detalles">
+                  <span class="nivel">{curso.nivel}</span>
+                  <span class="gestion">{curso.gestion}</span>
+                </div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
     </div>
-  {/if}
+  </div>
 </div>
+{/if}
 
 <style>
-  .asignar-cursos {
-    background: #fafbfc;
-    border-radius: 8px;
-    padding: 20px;
-    border: 1px solid #e2e8f0;
-    margin-top: 20px;
-  }
-
-  h3 {
-    margin: 0 0 20px;
-    font-size: 1rem;
-    color: #1e293b;
-  }
-
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
-  }
-
-  .form-group {
+  .overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   }
 
-  label {
-    font-size: 0.875rem;
-    color: #475569;
-    font-weight: 500;
-  }
-
-  .select-field {
-    padding: 0.5rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.375rem;
-    background-color: white;
-    color: #1e293b;
-    width: 100%;
-  }
-
-  .select-field option {
-    color: #1e293b;
+  .modal {
     background: white;
-    padding: 0.5rem;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 550px;
+    max-height: 600px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
   }
 
-  .form-actions {
-    grid-column: span 2;
+  .header {
     display: flex;
-    justify-content: flex-end;
-    margin-top: 10px;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid #e0e0e0;
   }
 
-  .btn-primary {
-    padding: 8px 16px;
-    background: #00cfe6;
-    color: white;
+  .header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #1a1a1a;
+    font-weight: 600;
+  }
+
+  .btn-cerrar {
+    background: none;
     border: none;
-    border-radius: 6px;
+    font-size: 24px;
     cursor: pointer;
+    color: #666;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Arial, sans-serif;
   }
 
-  .btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .content {
+    padding: 0;
   }
 
-  .asignaciones-list {
-    margin-top: 20px;
-    padding: 10px;
-    background: #fff;
-    border-radius: 8px;
-    border: 1px solid #e2e8f0;
+  .lista-cursos {
+    max-height: 450px;
+    overflow-y: auto;
+    padding: 8px 0;
   }
 
-  .asignaciones-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 10px;
+  .curso-item {
+    padding: 16px 24px;
+    border-bottom: 1px solid #f0f0f0;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: black;
   }
 
-  .asignacion-card {
-    background: #f9fafb;
-    padding: 10px;
-    border-radius: 6px;
-    border: 1px solid #e2e8f0;
+  .curso-item:hover {
+    background: #aebcca;
+  }
+
+  .curso-item.seleccionado {
+    background: #007bff;
+    
+  }
+  
+
+  .curso-item.seleccionado .nivel,
+  .curso-item.seleccionado .gestion {
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .curso-info {
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
 
-  .materia {
+  .nombre {
     font-weight: 500;
-    color: #1e293b;
+    font-size: 1rem;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   }
 
-  .curso {
-    font-size: 0.875rem;
-    color: #475569;
+  .detalles {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
 
-  .btn-remove {
-    background: transparent;
-    border: none;
-    color: #ef4444;
-    cursor: pointer;
-    font-size: 1.25rem;
+  .nivel, .gestion {
+    font-size: 0.8rem;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-weight: 500;
   }
 
-  @media (max-width: 640px) {
-    .form-grid {
-      grid-template-columns: 1fr;
-    }
-    .form-actions {
-      grid-column: 1;
-    }
+  .nivel {
+    background: #e3f2fd;
+    color: #1565c0;
+    text-transform: capitalize;
+  }
+
+  .gestion {
+    background: #f3e5f5;
+    color: #7b1fa2;
+  }
+
+  .estado, .error {
+    padding: 40px 24px;
+    text-align: center;
+    color: #666;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+
+  .error {
+    color: #dc3545;
+    background: #f8d7da;
+    border-radius: 8px;
+    margin: 16px;
   }
 </style>
