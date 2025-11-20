@@ -1,6 +1,6 @@
 <script lang="ts">
 
-  import Counter from "./lib/+layout.svelte";
+  import Counter from "./lib/main.svelte";
 </script>
 
 <main>

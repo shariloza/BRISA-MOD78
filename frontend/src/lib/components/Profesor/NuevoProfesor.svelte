@@ -1,8 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from "svelte";
-  import AsignarMaterias from "./AsignarMaterias.svelte";
-  import AsignarCursos from "./AsignarCursos.svelte";
-  import AsignarCarga from "./AsignarCarga.svelte";
+  import AsignarMaterias from "../Materias/AsignarMaterias.svelte";
+  import AsignarCursos from "../Cursos/AsignarCursos.svelte";
+  import AsignarCarga from "../Cargas/AsignarCarga.svelte";
   export let profesorInit: any = null;
 
   const API_URL = 'http://localhost:8000/api/profesores';

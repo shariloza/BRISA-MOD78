@@ -1,8 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from "svelte";
-  import AsignarMaterias from "./AsignarMaterias.svelte";
-  import AsignarCursos from "./AsignarCursos.svelte";
-  import AsignarCarga from "./AsignarCarga.svelte";
+  import AsignarMaterias from "../Materias/AsignarMaterias.svelte";
+  import AsignarCursos from "../Cursos/AsignarCursos.svelte";
+  import AsignarCarga from "../Cargas/AsignarCarga.svelte";
 
   interface Profesor {
     id_persona?: number;
