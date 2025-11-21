@@ -4,7 +4,7 @@
   import NuevoProfesor from "./NuevoProfesor.svelte";
   import EditarProfesores from "./EditarProfesores.svelte";
 
-  // ==================== API ====================
+  // ==================== API ===========================
   const API_URL = "http://localhost:8000/api/profesores";
   const API_MATERIAS_URL = "http://localhost:8000/api/profesores/materias";
   const API_BLOQUES_URL = "http://localhost:8000/api/profesores";
