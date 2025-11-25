@@ -17,13 +17,26 @@
   type Profesor = {
     id?: number;
     id_persona?: number;
+    ci?: string;
     nombres: string;
     apellido_paterno?: string;
     apellido_materno?: string;
+    direccion?: string;
+    telefono?: string;
+    correo?: string;
+    id_cargo?: number;
+    estado_laboral: string;
+    años_experiencia?: number;
+    fecha_ingreso?: string;
+    fecha_retiro?: string;
+    motivo_retiro?: string;
+    especialidad?: string;
+    titulo_academico?: string;
+    nivel_enseñanza?: string;
+    observaciones_profesor?: string;
     materias?: string[];
     cursos?: string[];
     cargaHoraria?: number;
-    estado_laboral: string;
   };
 
   // ==================== ESTADO ====================
@@ -204,6 +217,338 @@
       p.materias?.includes(materiaSeleccionada);
     return (okNombre || okMateria || okCurso) && okMateriaSelect;
   });
+
+  // ==================== EXPORTAR CSV ====================
+  async function exportarCSV() {
+    // Obtener todos los profesores con sus bloques horarios
+    const profesoresConBloques = await Promise.all(
+      profesores.map(async (p) => {
+        const id = p.id ?? p.id_persona;
+        let bloques = [];
+        if (id) {
+          try {
+            const res = await fetch(`${API_BLOQUES_URL}/${id}/bloques`);
+            if (res.ok) {
+              bloques = await res.json();
+            }
+          } catch (e) {
+            console.error(`Error cargando bloques para profesor ${id}:`, e);
+          }
+        }
+        return { ...p, bloques };
+      }),
+    );
+
+    const headers = [
+      "ci",
+      "nombres",
+      "apellido_paterno",
+      "apellido_materno",
+      "direccion",
+      "telefono",
+      "correo",
+      "id_cargo",
+      "estado_laboral",
+      "años_experiencia",
+      "fecha_ingreso",
+      "fecha_retiro",
+      "motivo_retiro",
+      "especialidad",
+      "titulo_academico",
+      "nivel_enseñanza",
+      "observaciones",
+      "materias",
+      "cursos",
+      "bloques_horarios",
+    ];
+
+    const rows = profesoresConBloques.map((p) => {
+      // Serializar bloques horarios como JSON compacto
+      const bloquesData = (p.bloques || []).map((b: any) => ({
+        m: b.nombre_materia || b.id_materia,
+        c: b.nombre_curso || b.id_curso,
+        d: b.dia_semana,
+        hi: b.hora_inicio,
+        hf: b.hora_fin,
+        g: b.gestion || "2025",
+        o: b.observaciones || "",
+      }));
+
+      return [
+        p.ci || "",
+        p.nombres || "",
+        p.apellido_paterno || "",
+        p.apellido_materno || "",
+        p.direccion || "",
+        p.telefono || "",
+        p.correo || "",
+        p.id_cargo || "",
+        p.estado_laboral || "activo",
+        p.años_experiencia || 0,
+        p.fecha_ingreso || "",
+        p.fecha_retiro || "",
+        p.motivo_retiro || "",
+        p.especialidad || "",
+        p.titulo_academico || "",
+        p.nivel_enseñanza || "todos",
+        p.observaciones_profesor || "",
+        (p.materias || []).join(";"),
+        (p.cursos || []).join(";"),
+        JSON.stringify(bloquesData),
+      ];
+    });
+
+    // Crear CSV
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) =>
+        row
+          .map((cell) => {
+            const str = String(cell);
+            if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+              return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+          })
+          .join(","),
+      ),
+    ].join("\n");
+
+    // Descargar archivo
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `profesores_${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  // ==================== IMPORTAR CSV ====================
+  let fileInput: HTMLInputElement;
+  let importando = false;
+
+  function abrirImportador() {
+    fileInput.click();
+  }
+
+  async function importarCSV(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    importando = true;
+    try {
+      const text = await file.text();
+      const lines = text.split("\n").filter((l) => l.trim());
+      if (lines.length < 2) {
+        alert("El archivo CSV está vacío");
+        return;
+      }
+
+      const headers = lines[0]
+        .split(",")
+        .map((h) => h.trim().replace(/^"|"$/g, ""));
+      const rows = lines.slice(1);
+
+      let creados = 0;
+      let asignacionesCreadas = 0;
+      let bloquesCreados = 0;
+      let errores: string[] = [];
+
+      for (const row of rows) {
+        try {
+          // Parsear CSV respetando comillas
+          const values: string[] = [];
+          let current = "";
+          let inQuotes = false;
+
+          for (let i = 0; i < row.length; i++) {
+            const char = row[i];
+            if (char === '"') {
+              if (inQuotes && row[i + 1] === '"') {
+                current += '"';
+                i++;
+              } else {
+                inQuotes = !inQuotes;
+              }
+            } else if (char === "," && !inQuotes) {
+              values.push(current.trim());
+              current = "";
+            } else {
+              current += char;
+            }
+          }
+          values.push(current.trim());
+
+          // Crear objeto profesor
+          const data: any = {};
+          let bloquesHorarios: any[] = [];
+
+          headers.forEach((h, i) => {
+            const val = values[i]?.replace(/^"|"$/g, "") || "";
+
+            if (h === "bloques_horarios") {
+              // Parsear JSON de bloques horarios
+              try {
+                bloquesHorarios = val ? JSON.parse(val) : [];
+              } catch (e) {
+                console.error("Error parseando bloques_horarios:", e);
+                bloquesHorarios = [];
+              }
+            } else if (h === "materias" || h === "cursos") {
+              data[h] = val ? val.split(";").map((v) => v.trim()) : [];
+            } else if (h === "años_experiencia" || h === "id_cargo") {
+              data[h] = val
+                ? parseInt(val)
+                : h === "años_experiencia"
+                  ? 0
+                  : null;
+            } else {
+              data[h] = val || null;
+            }
+          });
+
+          // 1. Crear profesor
+          const resProfesor = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          });
+
+          if (!resProfesor.ok) {
+            const error = await resProfesor.text();
+            errores.push(`${data.ci || "?"}: ${error}`);
+            continue;
+          }
+
+          creados++;
+          const profesorCreado = await resProfesor.json();
+          const idProfesor = profesorCreado.id_profesor;
+          const idPersona = profesorCreado.id_persona;
+
+          // 2. Obtener IDs de materias y cursos
+          const resMaterias = await fetch(API_MATERIAS_URL);
+          const todasMaterias = resMaterias.ok ? await resMaterias.json() : [];
+
+          const resCursos = await fetch(`${API_URL}/cursos`);
+          const todosCursos = resCursos.ok ? await resCursos.json() : [];
+
+          // 3. Crear asignaciones (profesor-curso-materia)
+          const materiasProfesor = data.materias || [];
+          const cursosProfesor = data.cursos || [];
+
+          for (const nombreMateria of materiasProfesor) {
+            const materia = todasMaterias.find(
+              (m: any) => m.nombre_materia === nombreMateria,
+            );
+            if (!materia) {
+              console.warn(`Materia "${nombreMateria}" no encontrada`);
+              continue;
+            }
+
+            for (const nombreCurso of cursosProfesor) {
+              const curso = todosCursos.find(
+                (c: any) => c.nombre_curso === nombreCurso,
+              );
+              if (!curso) {
+                console.warn(`Curso "${nombreCurso}" no encontrado`);
+                continue;
+              }
+
+              // Crear asignación
+              try {
+                const resAsignacion = await fetch(`${API_URL}/asignaciones`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id_profesor: idProfesor,
+                    id_curso: curso.id_curso,
+                    id_materia: materia.id_materia,
+                  }),
+                });
+
+                if (resAsignacion.ok) {
+                  asignacionesCreadas++;
+                }
+              } catch (e) {
+                console.error(`Error creando asignación:`, e);
+              }
+            }
+          }
+
+          // 4. Crear bloques horarios
+          for (const bloque of bloquesHorarios) {
+            try {
+              // Buscar IDs de materia y curso por nombre
+              const materia = todasMaterias.find(
+                (m: any) =>
+                  m.nombre_materia === bloque.m || m.id_materia === bloque.m,
+              );
+              const curso = todosCursos.find(
+                (c: any) =>
+                  c.nombre_curso === bloque.c || c.id_curso === bloque.c,
+              );
+
+              if (!materia || !curso) {
+                console.warn(
+                  `No se pudo crear bloque: materia o curso no encontrado`,
+                );
+                continue;
+              }
+
+              const resBloque = await fetch(`${API_URL}/bloques`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id_profesor: idProfesor,
+                  id_curso: curso.id_curso,
+                  id_materia: materia.id_materia,
+                  dia_semana: bloque.d,
+                  hora_inicio: bloque.hi,
+                  hora_fin: bloque.hf,
+                  gestion: bloque.g || "2025",
+                  observaciones: bloque.o || "",
+                }),
+              });
+
+              if (resBloque.ok) {
+                bloquesCreados++;
+              } else {
+                const errorBloque = await resBloque.text();
+                console.error(`Error creando bloque:`, errorBloque);
+              }
+            } catch (e) {
+              console.error(`Error procesando bloque:`, e);
+            }
+          }
+        } catch (e) {
+          errores.push(`Error en fila: ${e}`);
+        }
+      }
+
+      alert(
+        `Importación completada:\n✓ ${creados} profesores creados\n✓ ${asignacionesCreadas} asignaciones creadas\n✓ ${bloquesCreados} bloques horarios creados${errores.length > 0 ? `\n✗ ${errores.length} errores` : ""}`,
+      );
+
+      if (errores.length > 0) {
+        console.error("Errores de importación:", errores);
+      }
+
+      await refrescar();
+      pollingRapido();
+    } catch (e) {
+      alert(`Error al procesar el archivo: ${e}`);
+    } finally {
+      importando = false;
+      input.value = "";
+    }
+  }
 </script>
 
 {#if mostrarNuevo}
@@ -224,10 +569,29 @@
 
     <!-- BOTÓN A LA DERECHA (DEBAJO DEL TÍTULO) -->
     <div class="button-row">
+      <button class="btn-secondary" on:click={exportarCSV}>
+        📥 Exportar CSV
+      </button>
+      <button
+        class="btn-secondary"
+        on:click={abrirImportador}
+        disabled={importando}
+      >
+        {importando ? "Importando..." : "📤 Importar CSV"}
+      </button>
       <button class="btn-nuevo" on:click={abrirNuevo}>
         + Nuevo Profesor
       </button>
     </div>
+
+    <!-- Input oculto para importar -->
+    <input
+      type="file"
+      accept=".csv"
+      bind:this={fileInput}
+      on:change={importarCSV}
+      style="display: none;"
+    />
 
     <!-- FILTROS -->
     <div class="filters">
@@ -327,6 +691,7 @@
   .button-row {
     display: flex;
     justify-content: flex-end;
+    gap: 12px;
     margin-bottom: 24px;
   }
 
@@ -346,6 +711,29 @@
   .btn-nuevo:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 18px rgba(0, 207, 230, 0.4);
+  }
+
+  .btn-secondary {
+    background: white;
+    color: var(--text);
+    border: 1px solid #e2e8f0;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: 0.2s ease;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: var(--cyan);
+    transform: translateY(-2px);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* ==================== FILTROS ==================== */
