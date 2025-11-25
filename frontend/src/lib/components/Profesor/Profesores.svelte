@@ -3,6 +3,7 @@
   import { Clock } from "lucide-svelte";
   import NuevoProfesor from "./NuevoProfesor.svelte";
   import EditarProfesores from "./EditarProfesores.svelte";
+  import DetallesProfesor from "./DetallesProfesor.svelte";
 
   // ==================== API ===========================
   const API_URL = "http://localhost:8000/api/profesores";
@@ -46,7 +47,9 @@
   let searchQuery = "";
   let mostrarNuevo = false;
   let mostrarEditar = false;
+  let mostrarDetalles = false;
   let profesorEditando: Profesor | null = null;
+  let profesorDetalles: Profesor | null = null;
   let isLoading = false;
   let hasChanges = false;
   let polling: number | null = null;
@@ -184,12 +187,20 @@
   function abrirEditar(p: Profesor) {
     profesorEditando = p;
     mostrarEditar = true;
+    mostrarDetalles = false;
+  }
+
+  function abrirDetalles(p: Profesor) {
+    profesorDetalles = p;
+    mostrarDetalles = true;
   }
 
   function cerrarForms() {
     mostrarNuevo = false;
     mostrarEditar = false;
+    mostrarDetalles = false;
     profesorEditando = null;
+    profesorDetalles = null;
   }
 
   async function onSave(e: CustomEvent<Profesor>) {
@@ -559,6 +570,12 @@
     on:save={onSave}
     on:cancel={cerrarForms}
   />
+{:else if mostrarDetalles && profesorDetalles}
+  <DetallesProfesor
+    profesor={profesorDetalles}
+    on:close={cerrarForms}
+    on:edit={(e) => abrirEditar(e.detail)}
+  />
 {:else}
   <div class="profesores-container panel">
     <!-- TÍTULO -->
@@ -614,7 +631,7 @@
     <!-- GRID DE PROFESORES -->
     <div class="grid" class:updating={hasChanges}>
       {#each filtrados as p (p.id ?? p.id_persona ?? Math.random())}
-        <div class="card" on:click={() => abrirEditar(p)}>
+        <div class="card" on:click={() => abrirDetalles(p)}>
           <div class="avatar-circle">{initials(p)}</div>
 
           <div class="info">
