@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Edit, Trash2, Plus } from "lucide-svelte";
   import CrearCursos from "./CrearCursos.svelte";
   import EditarCursos from "./EditarCursos.svelte";
 
@@ -154,15 +155,7 @@
         </div>
 
         <button on:click={() => (showCrear = true)} class="btn-crear">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.5"
-          >
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
+          <Plus size={20} style="vertical-align:middle; margin-right:8px" />
           Nuevo Curso
         </button>
       </div>
@@ -207,6 +200,24 @@
         <div class="grid">
           {#each cursosFiltrados as curso}
             <article class="card">
+              <!-- Card Actions (Top Right) -->
+              <div class="card-actions">
+                <button
+                  on:click|stopPropagation={() => abrirEditar(curso)}
+                  class="icon-button"
+                  title="Editar"
+                >
+                  <Edit size={16} />
+                </button>
+                <button
+                  on:click|stopPropagation={() => deleteCurso(curso.id_curso)}
+                  class="icon-button icon-button-delete"
+                  title="Eliminar"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+
               <!-- Card Header -->
               <div class="card-header">
                 <h3 class="curso-nombre">{curso.nombre_curso}</h3>
@@ -263,46 +274,6 @@
                   </div>
                 </div>
               </div>
-
-              <!-- Card Actions -->
-              <div class="card-actions">
-                <button
-                  on:click={() => abrirEditar(curso)}
-                  class="btn-action btn-edit"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path
-                      d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
-                    ></path>
-                    <path
-                      d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
-                    ></path>
-                  </svg>
-                  Editar
-                </button>
-                <button
-                  on:click={() => deleteCurso(curso.id_curso)}
-                  class="btn-action btn-delete"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path
-                      d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-                    ></path>
-                  </svg>
-                  Eliminar
-                </button>
-              </div>
             </article>
           {/each}
         </div>
@@ -317,29 +288,33 @@
     title="Crear nuevo curso"
     aria-label="Crear nuevo curso"
   >
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2.5"
-    >
-      <line x1="12" y1="5" x2="12" y2="19"></line>
-      <line x1="5" y1="12" x2="19" y2="12"></line>
-    </svg>
+    <Plus size={24} />
   </button>
 
   <!-- Modales -->
   {#if showCrear}
-    <div class="overlay" on:click={() => (showCrear = false)}>
-      <div class="modal" on:click|stopPropagation>
+    <div
+      class="overlay"
+      role="button"
+      tabindex="0"
+      on:click={() => (showCrear = false)}
+      on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') showCrear = false }}
+    >
+      <div class="modal" role="dialog" aria-modal="true" tabindex="-1" on:click|stopPropagation on:keydown={(e) => e.stopPropagation()}>
         <CrearCursos on:close={cerrarCrear} />
       </div>
     </div>
   {/if}
 
   {#if showEditar && cursoAEditar}
-    <div class="overlay" on:click={cerrarEditar}>
-      <div class="modal" on:click|stopPropagation>
+    <div
+      class="overlay"
+      role="button"
+      tabindex="0"
+      on:click={cerrarEditar}
+      on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cerrarEditar() }}
+    >
+      <div class="modal" role="dialog" aria-modal="true" tabindex="-1" on:click|stopPropagation on:keydown={(e) => e.stopPropagation()}>
         <EditarCursos curso={cursoAEditar} on:close={cerrarEditar} />
       </div>
     </div>
@@ -529,10 +504,6 @@
     box-shadow: 0 4px 12px rgba(0, 207, 230, 0.3);
   }
 
-  .btn-crear svg {
-    width: 20px;
-    height: 20px;
-  }
 
   .btn-crear:hover {
     background: #00b8d4;
@@ -565,13 +536,14 @@
     }
   }
 
+
   /* ============================================
      GRID DE CURSOS
      ============================================ */
   .grid {
     display: grid;
-    gap: 20px;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 24px;
   }
 
   @media (max-width: 768px) {
@@ -587,17 +559,16 @@
     background: #ffffff;
     border-radius: 16px;
     overflow: hidden;
-    border: 2px solid var(--muted);
-    box-shadow: 0 2px 8px rgba(13, 46, 83, 0.08);
+    border: 1px solid #f1f5f9;
+    box-shadow: 0 10px 30px rgba(2,6,23,0.06);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
   }
 
   .card:hover {
     transform: translateY(-4px);
     border-color: var(--accent);
-    box-shadow:
-      0 8px 24px rgba(0, 207, 230, 0.2),
-      0 4px 12px rgba(13, 46, 83, 0.1);
+    box-shadow: 0 15px 40px rgba(0, 207, 230, 0.15);
   }
 
   /* Card Header */
@@ -690,49 +661,46 @@
     font-weight: 600;
   }
 
-  /* Card Actions */
+  /* Card Actions (Top Right) */
   .card-actions {
+    position: absolute;
+    top: 12px;
+    right: 12px;
     display: flex;
-    border-top: 2px solid var(--muted);
+    gap: 8px;
+    z-index: 3;
+    align-items: center;
   }
 
-  .btn-action {
-    flex: 1;
-    display: flex;
+  .icon-button {
+    background: white;
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 6px;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 14px;
-    border: none;
-    background: #ffffff;
-    font-weight: 600;
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(2,6,23,0.04);
+    color: #00cfe6;
+    transition: all 0.15s ease;
   }
 
-  .btn-action svg {
-    width: 16px;
-    height: 16px;
+  .icon-button:hover {
+    background: rgba(255,255,255,0.8);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(2,6,23,0.06);
   }
 
-  .btn-edit {
-    color: var(--accent);
-    border-right: 2px solid var(--muted);
-  }
-
-  .btn-edit:hover {
-    background: linear-gradient(180deg, #e6fbff 0%, #ccf7ff 100%);
-    color: #00b8d4;
-  }
-
-  .btn-delete {
+  .icon-button-delete {
     color: #ef4444;
   }
 
-  .btn-delete:hover {
-    background: linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%);
+  .icon-button-delete:hover {
     color: #dc2626;
+    background: rgba(254,242,242,0.5);
   }
 
   .btn-action:active {
@@ -821,11 +789,6 @@
     align-items: center;
     justify-content: center;
     z-index: 100;
-  }
-
-  .fab svg {
-    width: 28px;
-    height: 28px;
   }
 
   .fab:hover {

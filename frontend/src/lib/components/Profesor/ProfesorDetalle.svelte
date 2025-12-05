@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Phone, Mail } from "lucide-svelte";
+  import { Phone, Mail, Edit } from "lucide-svelte";
 
   export let profesor: {
     nombre: string;
@@ -35,7 +35,7 @@
       </div>
     </div>
 
-    <button class="edit-btn">Editar Perfil</button>
+    <button class="edit-btn"><Edit size={16} style="vertical-align:middle; margin-right:8px"/>Editar Perfil</button>
   </div>
 
   <!-- Tabs -->
@@ -149,13 +149,14 @@
     width: 70px;
     height: 70px;
     border-radius: 50%;
-    background: #00bcd4;
+    background: linear-gradient(135deg, #a78bfa, #60a5fa);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 600;
     font-size: 1.6rem;
+    box-shadow: 0 8px 22px rgba(99,102,241,0.12);
   }
 
   .info {
@@ -180,6 +181,8 @@
     padding: 0.25rem 0.6rem;
     border-radius: 12px;
     font-size: 0.8rem;
+    white-space: normal; /* allow long materia names to wrap */
+    display: inline-block;
   }
 
   .status {
@@ -191,18 +194,22 @@
   }
 
   .edit-btn {
-    border: 1px solid #00bcd4;
-    background: transparent;
-    color: #00bcd4;
+    border: 1px solid rgba(15,23,42,0.06);
+    background: white;
+    color: var(--cyan);
     padding: 0.5rem 1rem;
     border-radius: 8px;
     cursor: pointer;
-    transition: 0.2s;
+    transition: 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 6px rgba(2,6,23,0.04);
   }
 
   .edit-btn:hover {
-    background: #00bcd4;
-    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(2,6,23,0.06);
   }
 
   .tabs {

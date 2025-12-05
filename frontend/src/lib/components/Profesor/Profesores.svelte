@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { Clock } from "lucide-svelte";
+  import { Clock, Edit, Info, DownloadCloud, UploadCloud, User } from "lucide-svelte";
   import NuevoProfesor from "./NuevoProfesor.svelte";
   import EditarProfesores from "./EditarProfesores.svelte";
   import DetallesProfesor from "./DetallesProfesor.svelte";
@@ -586,19 +586,23 @@
 
     <!-- BOTÓN A LA DERECHA (DEBAJO DEL TÍTULO) -->
     <div class="button-row">
-      <button class="btn-secondary" on:click={exportarCSV}>
-        📥 Exportar CSV
-      </button>
-      <button
-        class="btn-secondary"
-        on:click={abrirImportador}
-        disabled={importando}
-      >
-        {importando ? "Importando..." : "📤 Importar CSV"}
-      </button>
-      <button class="btn-nuevo" on:click={abrirNuevo}>
-        + Nuevo Profesor
-      </button>
+        <button class="btn-secondary" on:click={exportarCSV} aria-label="Exportar CSV">
+          <DownloadCloud size={16} style="vertical-align:middle; margin-right:8px" />
+          <span>Exportar CSV</span>
+        </button>
+        <button
+          class="btn-secondary"
+          on:click={abrirImportador}
+          disabled={importando}
+          aria-label="Importar CSV"
+        >
+          <UploadCloud size={16} style="vertical-align:middle; margin-right:8px" />
+          <span>{importando ? "Importando..." : "Importar CSV"}</span>
+        </button>
+        <button class="btn-nuevo" on:click={abrirNuevo} aria-label="Nuevo Profesor">
+          <User size={16} style="vertical-align:middle; margin-right:8px" />
+          <span>Nuevo Profesor</span>
+        </button>
     </div>
 
     <!-- Input oculto para importar -->
@@ -631,7 +635,24 @@
     <!-- GRID DE PROFESORES -->
     <div class="grid" class:updating={hasChanges}>
       {#each filtrados as p (p.id ?? p.id_persona ?? Math.random())}
-        <div class="card" on:click={() => abrirDetalles(p)}>
+        <div
+          class="card"
+          role="button"
+          tabindex="0"
+          on:click={() => abrirDetalles(p)}
+          on:keydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") abrirDetalles(p);
+          }}
+        >
+          <div class="card-actions">
+            <button class="icon-button" title="Editar" on:click|stopPropagation={() => abrirEditar(p)}>
+              <Edit size={16} />
+            </button>
+            <button class="icon-button" title="Detalles" on:click|stopPropagation={() => abrirDetalles(p)}>
+              <Info size={16} />
+            </button>
+          </div>
+
           <div class="avatar-circle">{initials(p)}</div>
 
           <div class="info">
@@ -691,6 +712,7 @@
   /* ==================== TÍTULO ==================== */
   .title-section {
     margin-bottom: 8px;
+    text-align: center;
   }
 
   .title-section h1 {
@@ -710,6 +732,7 @@
     justify-content: flex-end;
     gap: 12px;
     margin-bottom: 24px;
+    align-items: center;
   }
 
   .btn-nuevo {
@@ -764,13 +787,13 @@
 
   .filters input {
     flex: 1;
-    min-width: 280px;
-    padding: 12px 18px;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    background: white;
-    font-size: 0.95rem;
-    color: black;
+    min-width: 320px;
+    padding: 14px 18px;
+    border: 1px solid #e6eef4;
+    border-radius: 12px;
+    background: #fbfdfe;
+    font-size: 0.96rem;
+    color: #0f172a;
   }
 
   .filters input:focus {
@@ -805,8 +828,8 @@
   /* ==================== GRID ==================== */
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 22px;
     transition: opacity 0.3s;
   }
 
@@ -818,13 +841,14 @@
   .card {
     background: white;
     border-radius: 16px;
-    padding: 16px;
-    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.06);
-    border: 1px solid #f1f5f9;
+    padding: 18px 18px 18px 20px;
+    box-shadow: 0 10px 30px rgba(2,6,23,0.06);
+    border: 1px solid rgba(15,23,42,0.04);
     display: flex;
     gap: 16px;
     cursor: pointer;
     transition: 0.25s;
+    position: relative;
   }
 
   .card:hover {
@@ -835,7 +859,7 @@
   .avatar-circle {
     width: 52px;
     height: 52px;
-    background: #c4b5fd;
+    background: linear-gradient(135deg, #a78bfa, #60a5fa);
     color: white;
     border-radius: 50%;
     display: flex;
@@ -844,8 +868,48 @@
     font-weight: 700;
     font-size: 1.2rem;
     flex-shrink: 0;
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.14);
   }
 
+  .card-actions {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    gap: 8px;
+    z-index: 3;
+    align-items: center;
+  }
+
+  .icon-button {
+    background: white;
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 6px;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(2,6,23,0.04);
+    color: #00cfe6;
+  }
+
+  .icon-button:hover {
+    background: rgba(255,255,255,0.8);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(2,6,23,0.06);
+  }
+
+  /* Reserve space so actions don't overlap content */
+  .info {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-right: 100px; /* space for action buttons */
+  }
+
+  /* Prevent materia pill from overflowing under actions */
   .name-line {
     display: flex;
     align-items: center;
@@ -861,11 +925,11 @@
   }
 
   .materia-pill {
-    background: linear-gradient(135deg, var(--cyan), #00a6b8);
+    background: linear-gradient(135deg, #06b6d4, #00a6b8);
     color: white;
-    padding: 4px 10px;
+    padding: 4px 8px;
     border-radius: 999px;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 600;
   }
 
@@ -924,10 +988,14 @@
     font-size: 1rem;
   }
   .panel {
-    background: #fff;
+    background: linear-gradient(180deg, #fbfdff 0%, #f7fbfc 100%);
     border-radius: 14px;
     padding: 20px;
     box-shadow: 0 6px 18px rgba(25, 40, 60, 0.02);
     border: 1px solid #eef6fa;
+  }
+
+  .profesores-container.panel {
+    padding-top: 8px;
   }
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Clock } from "lucide-svelte";
+  import { Clock, Edit, Info } from "lucide-svelte";
 
   const API_URL = "http://localhost:8000/api/profesores";
 
@@ -86,6 +86,15 @@
 <div class="profesores-grid">
   {#each profesores as profesor}
     <div class="card" role="button" tabindex="0">
+      <div class="card-actions">
+        <button class="icon-button" title="Editar" on:click|stopPropagation={() => {/* implementar navegación a editar */}}>
+          <Edit size={16} />
+        </button>
+        <button class="icon-button" title="Detalles" on:click|stopPropagation={() => {/* implementar detalles */}}>
+          <Info size={16} />
+        </button>
+      </div>
+
       <div class="avatar">
         {profesor.initials}
       </div>
@@ -93,11 +102,16 @@
       <div class="content">
         <div class="top">
           <div class="nombre">{profesor.displayName}</div>
-          <span class="materia-pill">
-            {#if profesor.materias?.length}
-              {profesor.materias.join(", ")}
-            {/if}
-          </span>
+-          <span class="materia-pill">
+-            {#if profesor.materias?.length}
+-              {profesor.materias.join(", ")}
+-            {/if}
+-          </span>
++          <span class="materia-pill">
++            {#if profesor.materias?.length}
++              {profesor.materias.join(", ")}
++            {/if}
++          </span>
         </div>
 
         <div class="curso-row">
@@ -154,6 +168,7 @@
     gap: 16px;
     align-items: flex-start;
     transition: all 0.2s ease;
+    position: relative;
   }
   .card:hover {
     transform: translateY(-2px);
@@ -165,19 +180,21 @@
     height: 48px;
     min-width: 48px;
     border-radius: 50%;
-    background: #9aa9ff;
+    background: linear-gradient(135deg, #a78bfa, #60a5fa);
     color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 600;
     font-size: 0.9rem;
+    box-shadow: 0 6px 12px rgba(99, 102, 241, 0.12);
   }
 
   .content {
-    flex: 1;
+    flex: 1 1 auto;
     min-width: 0;
-    overflow: hidden;
+    overflow: visible;
+    padding-right: 100px; /* space for action buttons */
   }
 
   .top {
@@ -198,13 +215,15 @@
   }
 
   .materia-pill {
-    background: linear-gradient(180deg, #00cfe6, #00bcd4);
+    background: linear-gradient(180deg, #06b6d4, #00a6b8);
     color: #fff;
-    padding: 6px 10px;
+    padding: 5px 8px;
     border-radius: 999px;
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     font-weight: 600;
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+    white-space: normal; /* allow wrap */
+    display: inline-block;
   }
 
   .curso-row {
@@ -229,6 +248,38 @@
     background: #eef4fa;
     margin: 6px 0;
   }
+
+  .card-actions {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    gap: 8px;
+    z-index: 3;
+    align-items: center;
+  }
+
+  .icon-button {
+    background: white;
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 6px;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(2,6,23,0.04);
+    color: #00cfe6;
+  }
+
+  .icon-button:hover {
+    background: rgba(255,255,255,0.8);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(2,6,23,0.06);
+  }
+
 
   .footer {
     display: flex;
